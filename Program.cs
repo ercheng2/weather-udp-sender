@@ -458,6 +458,6 @@ namespace WeatherUdpSender
     static class Program
     {
         [STAThread]
-        static void Main() { ApplicationConfiguration.Initialize(); Application.Run(new MainForm()); }
+        static void Main() { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); ApplicationConfiguration.Initialize(); Application.Run(new MainForm()); }
     }
 }
