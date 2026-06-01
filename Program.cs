@@ -186,15 +186,32 @@ namespace WeatherUdpSender
             string url = $"http://www.tqyb.com.cn/data/giftDailyCache/giftDaily{lonKey}_{latKey}.js";
             string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
 
-            // 关键修复：JS格式是 try{ var giftDailyXXX = {JSON}; }catch(e){}
-            // 必须找 "= {" 后面的 {，而不是 try{ 的 {
+            // JS格式: try{ var giftDailyXXX = {JSON}; }catch(e){}
+            // 1. 找 "= {" 后的 { 作为JSON起点（跳过 try{ 的 {）
+            // 2. 找 "};catch" 或 "};}catch" 前的 } 作为JSON终点
             int eqIdx = js.IndexOf("= {");
             if (eqIdx < 0) eqIdx = js.IndexOf("={");
             if (eqIdx < 0) throw new Exception("JS格式异常，找不到= {");
 
             int jsonStart = js.IndexOf('{', eqIdx);
-            // 找到匹配的 } —— 从末尾找最后一个 }
-            int jsonEnd = js.LastIndexOf('}');
+
+            // 找JSON结束：找 };catch 或 };}catch 模式
+            int catchIdx = js.IndexOf("catch", jsonStart);
+            int jsonEnd = -1;
+            if (catchIdx > 0)
+            {
+                // 从catch往前找 };
+                for (int k = catchIdx - 1; k >= jsonStart; k--)
+                {
+                    if (js[k] == '}')
+                    {
+                        jsonEnd = k;
+                        break;
+                    }
+                }
+            }
+            if (jsonEnd < 0) jsonEnd = js.LastIndexOf('}');
+
             if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart)
                 throw new Exception("无法提取JSON");
 
