@@ -1,0 +1,30 @@
+name: Build WeatherUdpSender
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - '**'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish (framework-dependent single-file)
+        run: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true -p:SelfContained=false -p:PublishTrimmed=false -o ./publish
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0-${{ github.run_number }}
+          files: |
+            ./publish/WeatherUdpSender.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

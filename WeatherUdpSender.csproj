@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon />
+    <AssemblyName>WeatherUdpSender</AssemblyName>
+    <RootNamespace>WeatherUdpSender</RootNamespace>
+    <Nullable>enable</Nullable>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+</Project>
