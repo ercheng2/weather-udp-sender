@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -11,39 +15,40 @@ using System.Windows.Forms;
 
 namespace WeatherUdpSender
 {
+    /// <summary>
+    /// 广州景点实时天气 UDP推送工具
+    /// 数据源：广州气象局 giftDailyCache 接口
+    /// </summary>
     public class MainForm : Form
     {
-        private TextBox txtUrl = null!;
+        // ===== 6个景点配置 =====
+        private static readonly ScenicSpot[] Spots = new[]
+        {
+            new ScenicSpot("白云山风景名胜区", 113.306258, 23.191448),
+            new ScenicSpot("长隆旅游度假区", 113.331839, 23.005809),
+            new ScenicSpot("萝岗香雪公园", 113.55, 23.1667),
+            new ScenicSpot("海心桥", 113.32, 23.11),
+            new ScenicSpot("南海神庙", 113.503936, 23.087264),
+            new ScenicSpot("陈家祠", 113.252777, 23.131612),
+        };
+
         private TextBox txtIp = null!;
         private TextBox txtPort = null!;
         private TextBox txtInterval = null!;
         private Button btnStart = null!;
         private ListBox lstLog = null!;
         private Label lblStatus = null!;
+        private PictureBox picPreview = null!;
 
         private System.Threading.Timer? _timer;
         private UdpClient? _udpClient;
         private volatile bool _running;
         private int _sendCount;
+        private SpotWeather[] _lastWeather = Array.Empty<SpotWeather>();
 
-        // 拼音→中文映射（与tqyb数据源对应）
-        private static readonly Dictionary<string, string> CityNameMap = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly HttpClient _httpClient = new()
         {
-            {"beijing", "北京"}, {"shanghai", "上海"}, {"BCGZ", "广州"},
-            {"hefei", "合肥"}, {"aomen", "澳门"}, {"fuzhou", "福州"},
-            {"shamen", "厦门"}, {"lanzhou", "兰州"}, {"guilin", "桂林"},
-            {"nanning", "南宁"}, {"beihai", "北海"}, {"guiyang", "贵阳"},
-            {"haikou", "海口"}, {"sanya", "三亚"}, {"shijiazhuang", "石家庄"},
-            {"zhengzhou", "郑州"}, {"haerbin", "哈尔滨"}, {"wuhan", "武汉"},
-            {"zhangsha", "长沙"}, {"zhangchun", "长春"}, {"nanjing", "南京"},
-            {"lianyungang", "连云港"}, {"nanchang", "南昌"}, {"ganzhou", "赣州"},
-            {"dalian", "大连"}, {"shenyang", "沈阳"}, {"anshan", "鞍山"},
-            {"huhehaote", "呼和浩特"}, {"yinchuan", "银川"}, {"xining", "西宁"},
-            {"jinan", "济南"}, {"qingdao", "青岛"}, {"taiyuan", "太原"},
-            {"xian", "西安"}, {"chengdou", "成都"}, {"taibei", "台北"},
-            {"tianjin", "天津"}, {"lasa", "拉萨"}, {"wulumuqi", "乌鲁木齐"},
-            {"kunming", "昆明"}, {"hangzhou", "杭州"}, {"ningbo", "宁波"},
-            {"zhongqing", "重庆"},
+            Timeout = TimeSpan.FromSeconds(15)
         };
 
         public MainForm()
@@ -53,71 +58,82 @@ namespace WeatherUdpSender
 
         private void InitializeComponents()
         {
-            // 窗体
-            this.Text = "天气数据UDP推送工具";
-            this.Size = new System.Drawing.Size(680, 520);
+            this.Text = "广州景点天气UDP推送";
+            this.Size = new Size(920, 680);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
 
             int y = 12;
-            int labelW = 90;
 
-            // 数据源URL
-            var lbl1 = new Label { Text = "数据源URL:", Left = 12, Top = y + 3, Width = labelW, TextAlign = System.Drawing.ContentAlignment.MiddleRight };
-            txtUrl = new TextBox
+            // 标题说明
+            var lblTitle = new Label
             {
-                Left = 108, Top = y, Width = 540,
-                Text = "http://www.tqyb.com.cn/data/gzWeather/domesticCityForecast.js"
+                Text = "数据源：广州气象局 giftDailyCache 接口（6个景点实时天气）",
+                Left = 12, Top = y, Width = 880, Height = 20,
+                ForeColor = Color.FromArgb(80, 80, 80)
             };
-            y += 32;
+            y += 26;
 
             // UDP目标IP
-            var lbl2 = new Label { Text = "目标IP:", Left = 12, Top = y + 3, Width = labelW, TextAlign = System.Drawing.ContentAlignment.MiddleRight };
-            txtIp = new TextBox { Left = 108, Top = y, Width = 200, Text = "127.0.0.1" };
-            var lbl3 = new Label { Text = "端口:", Left = 320, Top = y + 3, Width = 40 };
-            txtPort = new TextBox { Left = 364, Top = y, Width = 80, Text = "9999" };
-            var lbl4 = new Label { Text = "间隔(分):", Left = 460, Top = y + 3, Width = 60 };
-            txtInterval = new TextBox { Left = 524, Top = y, Width = 60, Text = "10" };
+            var lbl2 = new Label { Text = "目标IP:", Left = 12, Top = y + 3, Width = 55, TextAlign = ContentAlignment.MiddleRight };
+            txtIp = new TextBox { Left = 72, Top = y, Width = 140, Text = "127.0.0.1" };
+            var lbl3 = new Label { Text = "端口:", Left = 222, Top = y + 3, Width = 40 };
+            txtPort = new TextBox { Left = 266, Top = y, Width = 70, Text = "9999" };
+            var lbl4 = new Label { Text = "间隔(分):", Left = 350, Top = y + 3, Width = 60 };
+            txtInterval = new TextBox { Left = 414, Top = y, Width = 50, Text = "10" };
+
+            // 截图保存路径
+            var lbl5 = new Label { Text = "截图目录:", Left = 480, Top = y + 3, Width = 60 };
+            var txtScreenshotDir = new TextBox { Left = 544, Top = y, Width = 250, Text = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "screenshots") };
+
             y += 36;
 
             // 按钮
-            btnStart = new Button { Text = "启动", Left = 108, Top = y, Width = 80, Height = 30 };
+            btnStart = new Button { Text = "启动", Left = 12, Top = y, Width = 80, Height = 30 };
             btnStart.Click += BtnStart_Click;
-            var btnOnce = new Button { Text = "立即执行一次", Left = 200, Top = y, Width = 120, Height = 30 };
+            var btnOnce = new Button { Text = "立即获取", Left = 100, Top = y, Width = 100, Height = 30 };
             btnOnce.Click += (_, _) => FetchAndSend();
-            var btnClear = new Button { Text = "清空日志", Left = 332, Top = y, Width = 80, Height = 30 };
+            var btnScreenshot = new Button { Text = "截图预览", Left = 208, Top = y, Width = 100, Height = 30 };
+            btnScreenshot.Click += (_, _) => TakeScreenshot(txtScreenshotDir.Text.Trim());
+            var btnClear = new Button { Text = "清空日志", Left = 316, Top = y, Width = 80, Height = 30 };
             btnClear.Click += (_, _) => lstLog.Items.Clear();
-            y += 40;
+            y += 38;
 
             // 状态栏
-            lblStatus = new Label { Text = "状态：已停止", Left = 12, Top = y, Width = 300, ForeColor = System.Drawing.Color.Gray };
-            y += 22;
+            lblStatus = new Label { Text = "状态：已停止", Left = 12, Top = y, Width = 400, ForeColor = Color.Gray };
+            y += 24;
+
+            // 天气预览面板
+            picPreview = new PictureBox
+            {
+                Left = 12, Top = y, Width = 880, Height = 260,
+                BackColor = Color.FromArgb(15, 25, 60),
+                SizeMode = PictureBoxSizeMode.Zoom
+            };
+            y += 268;
 
             // 日志列表
             lstLog = new ListBox
             {
-                Left = 12, Top = y, Width = 636, Height = 290,
-                Font = new System.Drawing.Font("Consolas", 9f)
+                Left = 12, Top = y, Width = 880, Height = 180,
+                Font = new Font("Consolas", 9f)
             };
-            y += 294;
 
-            this.Controls.AddRange(new Control[] {
-                lbl1, txtUrl, lbl2, txtIp, lbl3, txtPort, lbl4, txtInterval,
-                btnStart, btnOnce, btnClear, lblStatus, lstLog
+            this.Controls.AddRange(new Control[]
+            {
+                lblTitle,
+                lbl2, txtIp, lbl3, txtPort, lbl4, txtInterval,
+                lbl5, txtScreenshotDir,
+                btnStart, btnOnce, btnScreenshot, btnClear,
+                lblStatus, picPreview, lstLog
             });
         }
 
         private void BtnStart_Click(object? sender, EventArgs e)
         {
-            if (_running)
-            {
-                Stop();
-            }
-            else
-            {
-                Start();
-            }
+            if (_running) Stop();
+            else Start();
         }
 
         private void Start()
@@ -142,7 +158,7 @@ namespace WeatherUdpSender
             _sendCount = 0;
             btnStart.Text = "停止";
             lblStatus.Text = "状态：运行中";
-            lblStatus.ForeColor = System.Drawing.Color.Green;
+            lblStatus.ForeColor = Color.Green;
 
             _udpClient = new UdpClient();
             _timer = new System.Threading.Timer(_ => FetchAndSend(), null, 0, intervalMin * 60 * 1000);
@@ -157,89 +173,54 @@ namespace WeatherUdpSender
             _udpClient = null;
             btnStart.Text = "启动";
             lblStatus.Text = "状态：已停止";
-            lblStatus.ForeColor = System.Drawing.Color.Gray;
+            lblStatus.ForeColor = Color.Gray;
         }
 
         private void FetchAndSend()
         {
-            if (!_running && _udpClient == null)
-            {
-                // 单次执行模式
-                _udpClient = new UdpClient();
-            }
+            var singleShot = !_running;
+            if (singleShot) _udpClient = new UdpClient();
 
             try
             {
-                var url = txtUrl.Text.Trim();
-                Log($"正在获取: {url}");
-
-                string jsContent;
-                using (var client = new HttpClient())
-                {
-                    client.Timeout = TimeSpan.FromSeconds(15);
-                    jsContent = client.GetStringAsync(url).GetAwaiter().GetResult();
-                }
-
-                // 从JS中提取JSON: var gz_domesticCityForecast = {...}
-                var jsonStart = jsContent.IndexOf('{');
-                var jsonEnd = jsContent.LastIndexOf('}');
-                if (jsonStart < 0 || jsonEnd < 0)
-                {
-                    Log("错误：无法从响应中提取JSON数据");
-                    return;
-                }
-                var jsonStr = jsContent.Substring(jsonStart, jsonEnd - jsonStart + 1);
-
-                // 解析JSON
-                using var doc = JsonDocument.Parse(jsonStr);
-                var root = doc.RootElement;
-
-                if (!root.TryGetProperty("data", out var dataElem))
-                {
-                    Log("错误：JSON中无data字段");
-                    return;
-                }
-
-                var targetIp = txtIp.Text.Trim();
-                var targetPort = int.Parse(txtPort.Text.Trim());
+                var targetIp = this.Invoke(() => txtIp.Text.Trim());
+                var targetPort = int.Parse(this.Invoke(() => txtPort.Text.Trim()));
                 var endPoint = new IPEndPoint(IPAddress.Parse(targetIp), targetPort);
 
-                int cityCount = 0;
-                int skipCount = 0;
+                var weathers = new SpotWeather[Spots.Length];
 
-                foreach (var prop in dataElem.EnumerateObject())
+                for (int i = 0; i < Spots.Length; i++)
                 {
-                    var pinyin = prop.Name;
-                    var cityName = CityNameMap.TryGetValue(pinyin, out var cn) ? cn : pinyin;
-
-                    if (prop.Value.ValueKind == JsonValueKind.Array)
+                    try
                     {
-                        var arr = prop.Value.EnumerateArray().ToList();
-                        if (arr.Count == 0)
-                        {
-                            skipCount++;
-                            continue;
-                        }
-
-                        // 发送3天预报，每天一条
-                        for (int day = 0; day < arr.Count; day++)
-                        {
-                            var dayData = arr[day];
-                            var mint = dayData.TryGetProperty("mint", out var m) ? m.GetDouble() : 0;
-                            var maxt = dayData.TryGetProperty("maxt", out var x) ? x.GetDouble() : 0;
-                            var cont = dayData.TryGetProperty("cont", out var c) ? c.GetString() ?? "" : "";
-
-                            // 格式: 城市,最低温,最高温,天气,第几天(0=今天,1=明天,2=后天)
-                            var msg = $"{cityName},{mint},{maxt},{cont},{day}";
-                            var bytes = Encoding.UTF8.GetBytes(msg);
-                            _udpClient!.Send(bytes, bytes.Length, endPoint);
-                            _sendCount++;
-                        }
-                        cityCount++;
+                        weathers[i] = FetchSpotWeather(Spots[i]);
+                    }
+                    catch (Exception ex)
+                    {
+                        weathers[i] = new SpotWeather { Name = Spots[i].Name, Error = ex.Message };
+                        Log($"  ✗ {Spots[i].Name}: {ex.Message}");
                     }
                 }
 
-                Log($"✓ 完成: {cityCount}个城市, {skipCount}个缺数据, 共{_sendCount}条UDP已发送 → {targetIp}:{targetPort}");
+                _lastWeather = weathers;
+
+                // UDP发送
+                int sent = 0;
+                foreach (var w in weathers)
+                {
+                    if (w.Error != null) continue;
+                    // 格式：景点名,当前温度,最低温,最高温,体感温度,湿度,天气描述
+                    var msg = $"{w.Name},{w.CurrentTemp:F1},{w.MinTemp:F0},{w.MaxTemp:F0},{w.FeelsLike:F1},{w.Humidity:F0},{w.Description}";
+                    var bytes = Encoding.UTF8.GetBytes(msg);
+                    _udpClient!.Send(bytes, bytes.Length, endPoint);
+                    sent++;
+                    _sendCount++;
+                }
+
+                // 更新预览面板
+                this.Invoke(() => DrawWeatherPanel(weathers));
+
+                Log($"✓ 完成: {sent}/{Spots.Length}个景点, 累计{_sendCount}条UDP → {targetIp}:{targetPort}");
             }
             catch (Exception ex)
             {
@@ -247,8 +228,7 @@ namespace WeatherUdpSender
             }
             finally
             {
-                // 单次执行模式用完关闭
-                if (!_running)
+                if (singleShot)
                 {
                     _udpClient?.Close();
                     _udpClient = null;
@@ -256,23 +236,366 @@ namespace WeatherUdpSender
             }
         }
 
+        private SpotWeather FetchSpotWeather(ScenicSpot spot)
+        {
+            // 计算giftDailyCache的网格坐标（0.05精度向下取整）
+            double gridLon = Math.Floor(spot.Longitude / 0.05) * 0.05;
+            double gridLat = Math.Floor(spot.Latitude / 0.05) * 0.05;
+            int lonKey = (int)(gridLon * 100);
+            int latKey = (int)(gridLat * 100);
+
+            string url = $"http://www.tqyb.com.cn/data/giftDailyCache/giftDaily{lonKey}_{latKey}.js";
+
+            string jsContent = _httpClient.GetStringAsync(url).GetAwaiter().GetResult();
+
+            // 从JS中提取JSON
+            int jsonStart = jsContent.IndexOf('{');
+            int jsonEnd = jsContent.LastIndexOf('}');
+            if (jsonStart < 0 || jsonEnd < 0)
+                throw new Exception("无法从响应中提取JSON");
+
+            string jsonStr = jsContent.Substring(jsonStart, jsonEnd - jsonStart + 1);
+
+            using var doc = JsonDocument.Parse(jsonStr);
+            var root = doc.RootElement;
+
+            // 解析各字段
+            var giftT = GetArray(root, "gift_t");
+            var tigT = GetArray(root, "tig_t");
+            var giftRh2m = GetArray(root, "gift_rh2m");
+            var descF = GetArray<string>(root, "desc_f");
+            var maxt = GetArray(root, "maxt");
+            var mint = GetArray(root, "mint");
+
+            // 计算当前小时在gift_t中的索引
+            // gift_t从20:00开始，每小时一个值，每天24个值
+            int currentHour = DateTime.Now.Hour;
+            int hourIndex = (currentHour - 20 + 24) % 24;
+            // 第一组24个值是"昨晚→今天"
+            // 如果当前时间在20:00之前，数据在第一个24块中
+            // 如果当前时间在20:00之后，数据在第二个24块中（今天晚上）
+            int dayBlock = currentHour >= 20 ? 1 : 0;
+            int globalIndex = dayBlock * 24 + hourIndex;
+
+            double currentTemp = SafeGet(giftT, globalIndex);
+            double feelsLike = SafeGet(tigT, globalIndex);
+            double humidity = SafeGet(giftRh2m, globalIndex);
+            string description = descF.Length > 1 ? descF[1] : (descF.Length > 0 ? descF[0] : "未知");
+
+            // 今日最高/最低温 - maxt[1]和mint[1]是"今天"的
+            int todayIdx = currentHour >= 20 ? 2 : 1;
+            double maxTemp = SafeGet(maxt, todayIdx);
+            double minTemp = SafeGet(mint, todayIdx);
+
+            // 如果当前温度比预报最高温高或最低温低，用当前温度
+            if (currentTemp > -900 && maxTemp > -900) maxTemp = Math.Max(maxTemp, currentTemp);
+            if (currentTemp > -900 && minTemp > -900) minTemp = Math.Min(minTemp, currentTemp);
+
+            return new SpotWeather
+            {
+                Name = spot.Name,
+                CurrentTemp = currentTemp,
+                MinTemp = minTemp,
+                MaxTemp = maxTemp,
+                FeelsLike = feelsLike,
+                Humidity = humidity,
+                Description = description
+            };
+        }
+
+        private static double[] GetArray(JsonElement root, string propName)
+        {
+            if (!root.TryGetProperty(propName, out var elem) || elem.ValueKind != JsonValueKind.Array)
+                return Array.Empty<double>();
+            var result = new double[elem.GetArrayLength()];
+            for (int i = 0; i < result.Length; i++)
+                result[i] = elem[i].GetDouble();
+            return result;
+        }
+
+        private static T[] GetArray<T>(JsonElement root, string propName) where T : class
+        {
+            if (!root.TryGetProperty(propName, out var elem) || elem.ValueKind != JsonValueKind.Array)
+                return Array.Empty<T>();
+            var result = new T[elem.GetArrayLength()];
+            for (int i = 0; i < result.Length; i++)
+            {
+                if (typeof(T) == typeof(string))
+                    result[i] = (T)(object)(elem[i].GetString() ?? "");
+                else
+                    result[i] = default!;
+            }
+            return result;
+        }
+
+        private static double SafeGet(double[] arr, int idx)
+        {
+            if (arr == null || idx < 0 || idx >= arr.Length) return -999.9;
+            double v = arr[idx];
+            return v < -900 ? -999.9 : v;
+        }
+
+        // ===== 绘制天气面板（深蓝渐变背景，6宫格） =====
+        private void DrawWeatherPanel(SpotWeather[] weathers)
+        {
+            int w = picPreview.Width;
+            int h = picPreview.Height;
+            var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+
+                // 深蓝渐变背景
+                using (var brush = new LinearGradientBrush(new Rectangle(0, 0, w, h),
+                    Color.FromArgb(10, 20, 55), Color.FromArgb(25, 45, 100), 90f))
+                {
+                    g.FillRectangle(brush, 0, 0, w, h);
+                }
+
+                // 标题
+                string title = $"广州景点实时天气  {DateTime.Now:yyyy-MM-dd HH:mm}";
+                using (var titleFont = new Font("微软雅黑", 14f, FontStyle.Bold))
+                using (var titleBrush = new SolidBrush(Color.White))
+                {
+                    g.DrawString(title, titleFont, titleBrush, new PointF(20, 10));
+                }
+
+                // 6宫格 3列×2行
+                int cols = 3, rows = 2;
+                int padding = 10;
+                int topOffset = 40;
+                int cellW = (w - padding * (cols + 1)) / cols;
+                int cellH = (h - topOffset - padding * (rows + 1)) / rows;
+
+                for (int i = 0; i < weathers.Length; i++)
+                {
+                    int col = i % cols;
+                    int row = i / cols;
+                    int x = padding + col * (cellW + padding);
+                    int y2 = topOffset + padding + row * (cellH + padding);
+
+                    DrawWeatherCell(g, x, y2, cellW, cellH, weathers[i]);
+                }
+            }
+
+            picPreview.Image?.Dispose();
+            picPreview.Image = bmp;
+        }
+
+        private void DrawWeatherCell(Graphics g, int x, int y, int w, int h, SpotWeather weather)
+        {
+            // 卡片背景（半透明深蓝）
+            using (var cardBrush = new SolidBrush(Color.FromArgb(30, 50, 95)))
+            using (var borderPen = new Pen(Color.FromArgb(60, 90, 160), 1))
+            {
+                g.FillRectangle(cardBrush, x, y, w, h);
+                g.DrawRectangle(borderPen, x, y, w, h);
+            }
+
+            bool hasError = weather.Error != null;
+
+            // 景点名
+            using (var nameFont = new Font("微软雅黑", 11f, FontStyle.Bold))
+            using (var nameBrush = new SolidBrush(Color.FromArgb(200, 220, 255)))
+            {
+                g.DrawString(weather.Name, nameFont, nameBrush, new PointF(x + 10, y + 6));
+            }
+
+            if (hasError)
+            {
+                using (var errFont = new Font("微软雅黑", 9f))
+                using (var errBrush = new SolidBrush(Color.FromArgb(255, 120, 120)))
+                {
+                    g.DrawString($"获取失败: {weather.Error}", errFont, errBrush, new PointF(x + 10, y + 45));
+                }
+                return;
+            }
+
+            // 当前温度（大字）
+            string tempStr = weather.CurrentTemp > -900 ? $"{weather.CurrentTemp:F0}°C" : "--°C";
+            using (var tempFont = new Font("Arial", 28f, FontStyle.Bold))
+            using (var tempBrush = new SolidBrush(Color.White))
+            {
+                g.DrawString(tempStr, tempFont, tempBrush, new PointF(x + 10, y + 30));
+            }
+
+            // 温度区间
+            string rangeStr = "";
+            if (weather.MinTemp > -900 && weather.MaxTemp > -900)
+                rangeStr = $"{weather.MinTemp:F0}°~{weather.MaxTemp:F0}°C";
+            using (var rangeFont = new Font("微软雅黑", 9f))
+            using (var rangeBrush = new SolidBrush(Color.FromArgb(160, 190, 240)))
+            {
+                g.DrawString(rangeStr, rangeFont, rangeBrush, new PointF(x + 10, y + 70));
+            }
+
+            // 天气描述
+            using (var descFont = new Font("微软雅黑", 10f))
+            using (var descBrush = new SolidBrush(Color.FromArgb(255, 220, 100)))
+            {
+                g.DrawString(weather.Description, descFont, descBrush, new PointF(x + 120, y + 70));
+            }
+
+            // 详细信息（第二行）
+            int detailY = y + 95;
+            using (var detailFont = new Font("微软雅黑", 9f))
+            using (var detailBrush = new SolidBrush(Color.FromArgb(180, 200, 230)))
+            {
+                if (weather.FeelsLike > -900)
+                    g.DrawString($"体感 {weather.FeelsLike:F0}°C", detailFont, detailBrush, new PointF(x + 10, detailY));
+                if (weather.Humidity > -900)
+                    g.DrawString($"湿度 {weather.Humidity:F0}%", detailFont, detailBrush, new PointF(x + 120, detailY));
+            }
+        }
+
+        // ===== 截图保存 =====
+        private void TakeScreenshot(string dir)
+        {
+            try
+            {
+                if (_lastWeather.Length == 0)
+                {
+                    MessageBox.Show("请先获取天气数据", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                // 生成高分辨率截图（960×540）
+                int imgW = 960, imgH = 540;
+                using (var bmp = new Bitmap(imgW, imgH, PixelFormat.Format32bppArgb))
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+
+                    // 深蓝渐变背景
+                    using (var brush = new LinearGradientBrush(new Rectangle(0, 0, imgW, imgH),
+                        Color.FromArgb(10, 20, 55), Color.FromArgb(25, 45, 100), 90f))
+                    {
+                        g.FillRectangle(brush, 0, 0, imgW, imgH);
+                    }
+
+                    // 标题
+                    string title = $"广州景点实时天气  {DateTime.Now:yyyy-MM-dd HH:mm}";
+                    using (var titleFont = new Font("微软雅黑", 18f, FontStyle.Bold))
+                    using (var titleBrush = new SolidBrush(Color.White))
+                    {
+                        g.DrawString(title, titleFont, titleBrush, new PointF(24, 12));
+                    }
+
+                    // 6宫格 3列×2行
+                    int cols = 3, rows = 2;
+                    int padding = 14;
+                    int topOffset = 55;
+                    int cellW = (imgW - padding * (cols + 1)) / cols;
+                    int cellH = (imgH - topOffset - padding * (rows + 1)) / rows;
+
+                    for (int i = 0; i < _lastWeather.Length; i++)
+                    {
+                        int col = i % cols;
+                        int row = i / cols;
+                        int cx = padding + col * (cellW + padding);
+                        int cy = topOffset + padding + row * (cellH + padding);
+
+                        DrawWeatherCellHighRes(g, cx, cy, cellW, cellH, _lastWeather[i]);
+                    }
+                }
+
+                // 保存
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string filename = $"weather_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                string filepath = Path.Combine(dir, filename);
+                bmp.Save(filepath, ImageFormat.Png);
+
+                Log($"截图已保存: {filepath}");
+                MessageBox.Show($"截图已保存到:\n{filepath}", "截图完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Log($"截图失败: {ex.Message}");
+                MessageBox.Show($"截图失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void DrawWeatherCellHighRes(Graphics g, int x, int y, int w, int h, SpotWeather weather)
+        {
+            // 卡片背景
+            using (var cardBrush = new SolidBrush(Color.FromArgb(30, 50, 95)))
+            using (var borderPen = new Pen(Color.FromArgb(60, 90, 160), 2))
+            {
+                g.FillRectangle(cardBrush, x, y, w, h);
+                g.DrawRectangle(borderPen, x, y, w, h);
+            }
+
+            bool hasError = weather.Error != null;
+
+            using (var nameFont = new Font("微软雅黑", 14f, FontStyle.Bold))
+            using (var nameBrush = new SolidBrush(Color.FromArgb(200, 220, 255)))
+            {
+                g.DrawString(weather.Name, nameFont, nameBrush, new PointF(x + 14, y + 8));
+            }
+
+            if (hasError)
+            {
+                using (var errFont = new Font("微软雅黑", 11f))
+                using (var errBrush = new SolidBrush(Color.FromArgb(255, 120, 120)))
+                {
+                    g.DrawString($"获取失败: {weather.Error}", errFont, errBrush, new PointF(x + 14, y + 55));
+                }
+                return;
+            }
+
+            // 当前温度（大字）
+            string tempStr = weather.CurrentTemp > -900 ? $"{weather.CurrentTemp:F0}°C" : "--°C";
+            using (var tempFont = new Font("Arial", 36f, FontStyle.Bold))
+            using (var tempBrush = new SolidBrush(Color.White))
+            {
+                g.DrawString(tempStr, tempFont, tempBrush, new PointF(x + 14, y + 38));
+            }
+
+            // 温度区间
+            string rangeStr = "";
+            if (weather.MinTemp > -900 && weather.MaxTemp > -900)
+                rangeStr = $"{weather.MinTemp:F0}°~{weather.MaxTemp:F0}°C";
+            using (var rangeFont = new Font("微软雅黑", 11f))
+            using (var rangeBrush = new SolidBrush(Color.FromArgb(160, 190, 240)))
+            {
+                g.DrawString(rangeStr, rangeFont, rangeBrush, new PointF(x + 14, y + 88));
+            }
+
+            // 天气描述
+            using (var descFont = new Font("微软雅黑", 12f))
+            using (var descBrush = new SolidBrush(Color.FromArgb(255, 220, 100)))
+            {
+                g.DrawString(weather.Description, descFont, descBrush, new PointF(x + 150, y + 87));
+            }
+
+            // 详细信息
+            int detailY = y + 118;
+            using (var detailFont = new Font("微软雅黑", 11f))
+            using (var detailBrush = new SolidBrush(Color.FromArgb(180, 200, 230)))
+            {
+                if (weather.FeelsLike > -900)
+                    g.DrawString($"体感 {weather.FeelsLike:F0}°C", detailFont, detailBrush, new PointF(x + 14, detailY));
+                if (weather.Humidity > -900)
+                    g.DrawString($"湿度 {weather.Humidity:F0}%", detailFont, detailBrush, new PointF(x + 150, detailY));
+            }
+        }
+
         private void Log(string message)
         {
-            var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
             if (lstLog.InvokeRequired)
-            {
                 lstLog.Invoke(new Action(() => AddLogLine(line)));
-            }
             else
-            {
                 AddLogLine(line);
-            }
         }
 
         private void AddLogLine(string line)
         {
             lstLog.Items.Insert(0, line);
-            if (lstLog.Items.Count > 200)
+            if (lstLog.Items.Count > 300)
                 lstLog.Items.RemoveAt(lstLog.Items.Count - 1);
         }
 
@@ -281,6 +604,21 @@ namespace WeatherUdpSender
             Stop();
             base.OnFormClosing(e);
         }
+    }
+
+    // ===== 数据结构 =====
+    public record ScenicSpot(string Name, double Longitude, double Latitude);
+
+    public class SpotWeather
+    {
+        public string Name = "";
+        public double CurrentTemp = -999.9;
+        public double MinTemp = -999.9;
+        public double MaxTemp = -999.9;
+        public double FeelsLike = -999.9;
+        public double Humidity = -999.9;
+        public string Description = "";
+        public string? Error;
     }
 
     static class Program
