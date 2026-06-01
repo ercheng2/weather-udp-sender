@@ -187,33 +187,28 @@ namespace WeatherUdpSender
             string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
 
             // JS格式: try{ var giftDailyXXX = {JSON}; }catch(e){}
-            // 1. 找 "= {" 后的 { 作为JSON起点（跳过 try{ 的 {）
-            // 2. 找 "};catch" 或 "};}catch" 前的 } 作为JSON终点
+            // 用括号计数器精确定位JSON对象的范围
             int eqIdx = js.IndexOf("= {");
             if (eqIdx < 0) eqIdx = js.IndexOf("={");
             if (eqIdx < 0) throw new Exception("JS格式异常，找不到= {");
 
             int jsonStart = js.IndexOf('{', eqIdx);
+            if (jsonStart < 0) throw new Exception("找不到JSON起始{");
 
-            // 找JSON结束：找 };catch 或 };}catch 模式
-            int catchIdx = js.IndexOf("catch", jsonStart);
+            // 括号计数器：找到与jsonStart的{配对的}
+            int depth = 0;
             int jsonEnd = -1;
-            if (catchIdx > 0)
+            for (int k = jsonStart; k < js.Length; k++)
             {
-                // 从catch往前找 };
-                for (int k = catchIdx - 1; k >= jsonStart; k--)
+                if (js[k] == '{') depth++;
+                else if (js[k] == '}') depth--;
+                if (depth == 0)
                 {
-                    if (js[k] == '}')
-                    {
-                        jsonEnd = k;
-                        break;
-                    }
+                    jsonEnd = k;
+                    break;
                 }
             }
-            if (jsonEnd < 0) jsonEnd = js.LastIndexOf('}');
-
-            if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart)
-                throw new Exception("无法提取JSON");
+            if (jsonEnd < 0) throw new Exception("找不到JSON结束}");
 
             string json = js.Substring(jsonStart, jsonEnd - jsonStart + 1);
 
