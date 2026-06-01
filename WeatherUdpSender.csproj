@@ -4,7 +4,6 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <EmbeddedResource Include="app.ico" />
     <AssemblyName>WeatherUdpSender</AssemblyName>
     <RootNamespace>WeatherUdpSender</RootNamespace>
     <Nullable>enable</Nullable>
@@ -12,4 +11,7 @@
     <SelfContained>false</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" />
+  </ItemGroup>
 </Project>
