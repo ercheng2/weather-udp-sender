@@ -170,7 +170,7 @@ namespace WeatherUdpSender
                         // UDP纯文本格式：
                         // 景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级,风向风力,明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
                         string msg = $"{w.Name},{w.Temp:F1},{w.MinT:F0},{w.MaxT:F0},{w.Feels:F1},{w.Rh:F0},{w.Desc},{w.Rain:F1},{w.Aqi},{w.UvIndex},{w.UvLevel},{w.WindForce},{w.Forecast}";
-                        byte[] bytes = Encoding.UTF8.GetBytes(msg);
+                        byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         _udpClient!.Send(bytes, bytes.Length, endpoint);
                         _sendCount++;
                         ok++;
