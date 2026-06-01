@@ -461,6 +461,10 @@ namespace WeatherUdpSender
                     return;
                 }
 
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string filename = $"weather_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                string filepath = Path.Combine(dir, filename);
+
                 // 生成高分辨率截图（960×540）
                 int imgW = 960, imgH = 540;
                 using (var bmp = new Bitmap(imgW, imgH, PixelFormat.Format32bppArgb))
@@ -500,13 +504,10 @@ namespace WeatherUdpSender
 
                         DrawWeatherCellHighRes(g, cx, cy, cellW, cellH, _lastWeather[i]);
                     }
-                }
 
-                // 保存
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                string filename = $"weather_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-                string filepath = Path.Combine(dir, filename);
-                bmp.Save(filepath, ImageFormat.Png);
+                    // 在using块内保存
+                    bmp.Save(filepath, ImageFormat.Png);
+                }
 
                 Log($"截图已保存: {filepath}");
                 MessageBox.Show($"截图已保存到:\n{filepath}", "截图完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
