@@ -23,9 +23,14 @@ namespace WeatherUdpSender
             ("陈家祠", 113.252777, 23.131612),
         };
 
+        // 配置文件路径
+        private static readonly string ConfigDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WeatherUdpSender");
+        private static readonly string ConfigPath = Path.Combine(ConfigDir, "config.json");
+
         private TextBox txtIp = null!;
         private TextBox txtPort = null!;
         private NumericUpDown numInterval = null!;
+        private CheckBox chkAutoStart = null!;
         private Button btnStart = null!;
         private ListBox lstLog = null!;
         private Label lblStatus = null!;
@@ -45,15 +50,26 @@ namespace WeatherUdpSender
         public MainForm()
         {
             InitUI();
+            LoadConfig();
         }
 
         private void InitUI()
         {
             this.Text = "广州景点天气UDP推送";
-            this.Size = new System.Drawing.Size(860, 580);
+            this.Size = new System.Drawing.Size(860, 600);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
+
+            // 加载图标（从嵌入资源读取）
+            try
+            {
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                using var stream = assembly.GetManifestResourceStream("WeatherUdpSender.app.ico");
+                if (stream != null)
+                    this.Icon = new System.Drawing.Icon(stream);
+            }
+            catch { }
 
             int y = 12;
 
@@ -71,6 +87,7 @@ namespace WeatherUdpSender
             txtPort = new TextBox { Left = 266, Top = y, Width = 70, Text = "9999" };
             var lblInt = new Label { Text = "间隔(分):", Left = 350, Top = y + 4, Width = 60 };
             numInterval = new NumericUpDown { Left = 414, Top = y, Width = 55, Minimum = 1, Maximum = 120, Value = 10 };
+            chkAutoStart = new CheckBox { Text = "开机自动启动", Left = 490, Top = y + 3, Width = 110 };
             y += 36;
 
             btnStart = new Button { Text = "启动", Left = 12, Top = y, Width = 80, Height = 30 };
@@ -102,15 +119,65 @@ namespace WeatherUdpSender
 
             lstLog = new ListBox
             {
-                Left = 12, Top = y, Width = 820, Height = 280,
+                Left = 12, Top = y, Width = 820, Height = 290,
                 Font = new System.Drawing.Font("Consolas", 9f)
             };
 
             this.Controls.AddRange(new Control[]
             {
                 lblInfo, lblIp, txtIp, lblPort, txtPort, lblInt, numInterval,
-                btnStart, btnOnce, btnClear, lblStatus, lblFormat, lblFormat2, lstLog
+                chkAutoStart, btnStart, btnOnce, btnClear, lblStatus, lblFormat, lblFormat2, lstLog
             });
+        }
+
+        /// <summary>
+        /// 加载配置文件
+        /// </summary>
+        private void LoadConfig()
+        {
+            try
+            {
+                if (File.Exists(ConfigPath))
+                {
+                    string json = File.ReadAllText(ConfigPath);
+                    var cfg = JsonSerializer.Deserialize<ConfigData>(json);
+                    if (cfg != null)
+                    {
+                        if (!string.IsNullOrEmpty(cfg.Ip)) txtIp.Text = cfg.Ip;
+                        if (cfg.Port > 0) txtPort.Text = cfg.Port.ToString();
+                        if (cfg.Interval > 0) numInterval.Value = cfg.Interval;
+                        chkAutoStart.Checked = cfg.AutoStart;
+                    }
+                }
+            }
+            catch { }
+
+            // 如果勾选了开机自动启动，则自动开始
+            if (chkAutoStart.Checked)
+            {
+                this.Load += (_, _) => Start();
+            }
+        }
+
+        /// <summary>
+        /// 保存配置文件
+        /// </summary>
+        private void SaveConfig()
+        {
+            try
+            {
+                Directory.CreateDirectory(ConfigDir);
+                var cfg = new ConfigData
+                {
+                    Ip = txtIp.Text.Trim(),
+                    Port = int.TryParse(txtPort.Text.Trim(), out int p) ? p : 9999,
+                    Interval = (int)numInterval.Value,
+                    AutoStart = chkAutoStart.Checked
+                };
+                string json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(ConfigPath, json);
+            }
+            catch { }
         }
 
         private void BtnStart_Click(object? sender, EventArgs e)
@@ -133,6 +200,8 @@ namespace WeatherUdpSender
             _udpClient = new UdpClient();
             int intervalMin = (int)numInterval.Value;
             _timer = new System.Threading.Timer(_ => FetchAndSend(), null, 0, intervalMin * 60 * 1000);
+
+            SaveConfig();
         }
 
         private void Stop()
@@ -299,14 +368,12 @@ namespace WeatherUdpSender
         /// </summary>
         private static string BuildForecast(string[] descF, double[] maxt, double[] mint, int todayI)
         {
-            // desc_f索引: 0=昨晚, 1=今天, 2=明天, 3=后天, 4=大后天
-            // maxt/mint索引与desc_f对齐
             string[] labels = { "明天", "后天", "大后天" };
             string[] parts = new string[3];
 
             for (int d = 0; d < 3; d++)
             {
-                int fIdx = todayI + 1 + d; // 明天=todayI+1, 后天=todayI+2, 大后天=todayI+3
+                int fIdx = todayI + 1 + d;
                 string weather = (fIdx < descF.Length) ? descF[fIdx] : "未知";
                 double hi = Val(maxt, fIdx);
                 double lo = Val(mint, fIdx);
@@ -366,7 +433,6 @@ namespace WeatherUdpSender
             if (level == 0)
                 return dirStr + "微风";
 
-            // 等级配对：1-2级, 3-4级, 5-6级...
             int pairStart = (level % 2 == 1) ? level : level - 1;
             if (pairStart < 1) pairStart = 1;
             string levelStr = $"{pairStart}-{pairStart + 1}级";
@@ -435,7 +501,12 @@ namespace WeatherUdpSender
             { lstLog.Items.Insert(0, line); if (lstLog.Items.Count > 500) lstLog.Items.RemoveAt(lstLog.Items.Count - 1); }
         }
 
-        protected override void OnFormClosing(FormClosingEventArgs e) { Stop(); base.OnFormClosing(e); }
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            SaveConfig();
+            Stop();
+            base.OnFormClosing(e);
+        }
     }
 
     public class SpotData
@@ -453,6 +524,14 @@ namespace WeatherUdpSender
         public string UvLevel = "";
         public string WindForce = "";
         public string Forecast = "";
+    }
+
+    public class ConfigData
+    {
+        public string Ip { get; set; } = "127.0.0.1";
+        public int Port { get; set; } = 9999;
+        public int Interval { get; set; } = 10;
+        public bool AutoStart { get; set; } = false;
     }
 
     static class Program

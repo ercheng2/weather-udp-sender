@@ -3,7 +3,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationIcon />
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <EmbeddedResource Include="app.ico" />
     <AssemblyName>WeatherUdpSender</AssemblyName>
     <RootNamespace>WeatherUdpSender</RootNamespace>
     <Nullable>enable</Nullable>
