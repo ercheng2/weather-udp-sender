@@ -50,7 +50,7 @@ namespace WeatherUdpSender
         private void InitUI()
         {
             this.Text = "广州景点天气UDP推送";
-            this.Size = new System.Drawing.Size(820, 520);
+            this.Size = new System.Drawing.Size(860, 580);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -60,7 +60,7 @@ namespace WeatherUdpSender
             var lblInfo = new Label
             {
                 Text = "6个广州景点实时天气 | UDP纯文本推送 | 数据源：广州气象局",
-                Left = 12, Top = y, Width = 790, Height = 18,
+                Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
             y += 24;
@@ -87,22 +87,29 @@ namespace WeatherUdpSender
             // UDP格式说明
             var lblFormat = new Label
             {
-                Text = "UDP格式: 景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级",
-                Left = 12, Top = y, Width = 790, Height = 18,
+                Text = "UDP格式: 景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级,风向风力,未来三天预报",
+                Left = 12, Top = y, Width = 820, Height = 18,
+                ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
+            };
+            y += 20;
+            var lblFormat2 = new Label
+            {
+                Text = "预报格式: 明天|天气|最高温|最低温;后天|天气|最高温|最低温;大后天|天气|最高温|最低温",
+                Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
             };
             y += 22;
 
             lstLog = new ListBox
             {
-                Left = 12, Top = y, Width = 780, Height = 260,
+                Left = 12, Top = y, Width = 820, Height = 280,
                 Font = new System.Drawing.Font("Consolas", 9f)
             };
 
             this.Controls.AddRange(new Control[]
             {
                 lblInfo, lblIp, txtIp, lblPort, txtPort, lblInt, numInterval,
-                btnStart, btnOnce, btnClear, lblStatus, lblFormat, lstLog
+                btnStart, btnOnce, btnClear, lblStatus, lblFormat, lblFormat2, lstLog
             });
         }
 
@@ -160,13 +167,15 @@ namespace WeatherUdpSender
                     try
                     {
                         var w = FetchSpotWeather(name, lon, lat);
-                        // UDP纯文本：景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级
-                        string msg = $"{w.Name},{w.Temp:F1},{w.MinT:F0},{w.MaxT:F0},{w.Feels:F1},{w.Rh:F0},{w.Desc},{w.Rain:F1},{w.Aqi},{w.UvIndex},{w.UvLevel}";
+                        // UDP纯文本格式：
+                        // 景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级,风向风力,明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
+                        string msg = $"{w.Name},{w.Temp:F1},{w.MinT:F0},{w.MaxT:F0},{w.Feels:F1},{w.Rh:F0},{w.Desc},{w.Rain:F1},{w.Aqi},{w.UvIndex},{w.UvLevel},{w.WindForce},{w.Forecast}";
                         byte[] bytes = Encoding.UTF8.GetBytes(msg);
                         _udpClient!.Send(bytes, bytes.Length, endpoint);
                         _sendCount++;
                         ok++;
-                        Log($"  {name}: {w.Temp:F1}°C {w.Desc} 湿度{w.Rh:F0}% 体感{w.Feels:F1}°C AQI:{w.Aqi} UV:{w.UvIndex}({w.UvLevel})");
+                        Log($"  {name}: {w.Temp:F1}°C {w.Desc} 湿度{w.Rh:F0}% 体感{w.Feels:F1}°C 空气质量:{w.Aqi} 紫外线:{w.UvIndex}({w.UvLevel}) {w.WindForce}");
+                        Log($"    预报: {w.Forecast}");
                     }
                     catch (Exception ex)
                     {
@@ -194,7 +203,6 @@ namespace WeatherUdpSender
         {
             try
             {
-                // 空气质量
                 string aqiJs = _http.GetStringAsync("http://www.tqyb.com.cn/data/gzWeather/gz_aqi.js").GetAwaiter().GetResult();
                 string aqiJson = ExtractJson(aqiJs);
                 using var aqiDoc = JsonDocument.Parse(aqiJson);
@@ -205,7 +213,6 @@ namespace WeatherUdpSender
 
             try
             {
-                // 紫外线 + 生活指数
                 string livingJs = _http.GetStringAsync("http://www.tqyb.com.cn/data/gzWeather/livingIndex.js").GetAwaiter().GetResult();
                 string livingJson = ExtractJson(livingJs);
                 using var livingDoc = JsonDocument.Parse(livingJson);
@@ -237,6 +244,8 @@ namespace WeatherUdpSender
             double[] rain = ReadArr(root, "gift_rain");
             double[] maxt = ReadArr(root, "maxt");
             double[] mint = ReadArr(root, "mint");
+            double[] windd = ReadArr(root, "gift_windd");
+            double[] winds = ReadArr(root, "gift_winds");
             string[] descF = ReadStrArr(root, "desc_f");
 
             // 当前小时索引
@@ -258,6 +267,14 @@ namespace WeatherUdpSender
 
             string desc = descF.Length > 1 ? descF[1] : (descF.Length > 0 ? descF[0] : "未知");
 
+            // 风向风力
+            int windDirNum = (int)Val(windd, idx);
+            double windSpeed = Val(winds, idx);
+            string windForce = FormatWindForce(windDirNum, windSpeed);
+
+            // 未来三天预报：desc_f索引 2=明天 3=后天 4=大后天
+            string forecast = BuildForecast(descF, maxt, mint, todayI);
+
             return new SpotData
             {
                 Name = name,
@@ -270,8 +287,91 @@ namespace WeatherUdpSender
                 Rain = rainVal,
                 Aqi = _aqiLevel,
                 UvIndex = _uvIndex,
-                UvLevel = _uvLevel
+                UvLevel = _uvLevel,
+                WindForce = windForce,
+                Forecast = forecast
             };
+        }
+
+        /// <summary>
+        /// 构建未来三天预报字符串
+        /// 格式: 明天|天气|最高温|最低温;后天|天气|最高温|最低温;大后天|天气|最高温|最低温
+        /// </summary>
+        private static string BuildForecast(string[] descF, double[] maxt, double[] mint, int todayI)
+        {
+            // desc_f索引: 0=昨晚, 1=今天, 2=明天, 3=后天, 4=大后天
+            // maxt/mint索引与desc_f对齐
+            string[] labels = { "明天", "后天", "大后天" };
+            string[] parts = new string[3];
+
+            for (int d = 0; d < 3; d++)
+            {
+                int fIdx = todayI + 1 + d; // 明天=todayI+1, 后天=todayI+2, 大后天=todayI+3
+                string weather = (fIdx < descF.Length) ? descF[fIdx] : "未知";
+                double hi = Val(maxt, fIdx);
+                double lo = Val(mint, fIdx);
+                string hiStr = hi > -900 ? hi.ToString("F0") : "--";
+                string loStr = lo > -900 ? lo.ToString("F0") : "--";
+                parts[d] = $"{labels[d]}|{weather}|{hiStr}|{loStr}";
+            }
+
+            return string.Join(";", parts);
+        }
+
+        /// <summary>
+        /// 风向数字转中文：1=北风 2=东北风 3=东风 4=东南风 5=南风 6=西南风 7=西风 8=西北风
+        /// </summary>
+        private static string WindDirectionToString(int dir)
+        {
+            return dir switch
+            {
+                1 => "北风", 2 => "东北风", 3 => "东风", 4 => "东南风",
+                5 => "南风", 6 => "西南风", 7 => "西风", 8 => "西北风",
+                _ => ""
+            };
+        }
+
+        /// <summary>
+        /// 风速(m/s)转蒲福风力等级
+        /// </summary>
+        private static int WindSpeedToBeaufort(double speed)
+        {
+            if (speed < 0) return 0;
+            if (speed <= 0.2) return 0;
+            if (speed <= 1.5) return 1;
+            if (speed <= 3.3) return 2;
+            if (speed <= 5.4) return 3;
+            if (speed <= 7.9) return 4;
+            if (speed <= 10.7) return 5;
+            if (speed <= 13.8) return 6;
+            if (speed <= 17.1) return 7;
+            if (speed <= 20.7) return 8;
+            if (speed <= 24.4) return 9;
+            if (speed <= 28.4) return 10;
+            if (speed <= 32.6) return 11;
+            return 12;
+        }
+
+        /// <summary>
+        /// 格式化风向风力，如"西风1-2级"、"微风"
+        /// </summary>
+        private static string FormatWindForce(int windDirNum, double windSpeed)
+        {
+            if (windDirNum < 1 || windDirNum > 8)
+                return "微风";
+
+            string dirStr = WindDirectionToString(windDirNum);
+            int level = WindSpeedToBeaufort(windSpeed);
+
+            if (level == 0)
+                return dirStr + "微风";
+
+            // 等级配对：1-2级, 3-4级, 5-6级...
+            int pairStart = (level % 2 == 1) ? level : level - 1;
+            if (pairStart < 1) pairStart = 1;
+            string levelStr = $"{pairStart}-{pairStart + 1}级";
+
+            return dirStr + levelStr;
         }
 
         /// <summary>
@@ -351,6 +451,8 @@ namespace WeatherUdpSender
         public string Aqi = "";
         public string UvIndex = "";
         public string UvLevel = "";
+        public string WindForce = "";
+        public string Forecast = "";
     }
 
     static class Program
