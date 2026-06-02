@@ -104,7 +104,7 @@ namespace WeatherUdpSender
             // UDP格式说明
             var lblFormat = new Label
             {
-                Text = "UDP格式: 景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级,风向风力,未来三天预报",
+                Text = "UDP格式: 景点名,温度XX°C(最低~最高),天气,体感XX°C,湿度XX%,降雨XXmm,空气质量,紫外线,风向风力,三天预报",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
             };
@@ -236,9 +236,9 @@ namespace WeatherUdpSender
                     try
                     {
                         var w = FetchSpotWeather(name, lon, lat);
-                        // UDP纯文本格式：
-                        // 景点名,温度,最低温,最高温,体感温度,湿度,天气,降雨量,空气质量,紫外线指数,紫外线等级,风向风力,明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
-                        string msg = $"{w.Name},{w.Temp:F1},{w.MinT:F0},{w.MaxT:F0},{w.Feels:F1},{w.Rh:F0},{w.Desc},{w.Rain:F1},{w.Aqi},{w.UvIndex},{w.UvLevel},{w.WindForce},{w.Forecast}";
+                        // UDP中文标注格式，方便直接阅读
+                        string minMax = (w.MinT > -900 && w.MaxT > -900) ? $"({w.MinT:F0}~{w.MaxT:F0}°C)" : "";
+                        string msg = $"{w.Name},温度{w.Temp:F1}°C{minMax},{w.Desc},体感{w.Feels:F1}°C,湿度{w.Rh:F0}%,降雨{w.Rain:F1}mm,空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.WindForce},{w.Forecast}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         _udpClient!.Send(bytes, bytes.Length, endpoint);
                         _sendCount++;
