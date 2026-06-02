@@ -172,6 +172,7 @@ namespace WeatherUdpSender
             if (chkAutoStart.Checked && chkMinimizeToTray.Checked)
             {
                 _startToTray = true;
+                if (_trayIcon != null) _trayIcon.Visible = true;
             }
         }
 
@@ -595,12 +596,6 @@ namespace WeatherUdpSender
                 Application.Exit();
             });
             _trayIcon.ContextMenuStrip = menu;
-
-            // 如果需要启动到托盘，现在显示托盘图标
-            if (_startToTray)
-            {
-                _trayIcon.Visible = true;
-            }
         }
 
         /// <summary>
