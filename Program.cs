@@ -164,7 +164,16 @@ namespace WeatherUdpSender
             // 如果勾选了开机自动启动，则自动开始
             if (chkAutoStart.Checked)
             {
-                this.Load += (_, _) => Start();
+                this.Load += (_, _) =>
+                {
+                    Start();
+                    // 同时勾选了最小化到托盘，启动后直接隐藏到托盘
+                    if (chkMinimizeToTray.Checked)
+                    {
+                        this.Hide();
+                        _trayIcon!.Visible = true;
+                    }
+                };
             }
         }
 
