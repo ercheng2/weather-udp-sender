@@ -617,7 +617,7 @@ namespace WeatherUdpSender
             {
                 this.Hide();
                 _trayIcon.Visible = true;
-                _trayIcon.ShowBalloonTip(2000, "广州景点天气UDP推送", "程序已最小化到托盘，双击图标恢复", ToolTipIcon.Info);
+
             }
         }
 
@@ -629,7 +629,7 @@ namespace WeatherUdpSender
                 e.Cancel = true;
                 this.Hide();
                 _trayIcon.Visible = true;
-                _trayIcon.ShowBalloonTip(2000, "广州景点天气UDP推送", "程序已最小化到托盘，双击图标恢复", ToolTipIcon.Info);
+
                 return;
             }
 
