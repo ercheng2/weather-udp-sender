@@ -43,6 +43,7 @@ namespace WeatherUdpSender
         // 系统托盘
         private NotifyIcon? _trayIcon;
         private CheckBox chkMinimizeToTray = null!;
+        private bool _startToTray = false; // 启动时直接隐藏到托盘
 
         // 缓存的公共数据
         private string _aqiLevel = "";
@@ -164,16 +165,13 @@ namespace WeatherUdpSender
             // 如果勾选了开机自动启动，则自动开始
             if (chkAutoStart.Checked)
             {
-                this.Load += (_, _) =>
-                {
-                    Start();
-                    // 同时勾选了最小化到托盘，启动后直接隐藏到托盘
-                    if (chkMinimizeToTray.Checked)
-                    {
-                        this.Hide();
-                        _trayIcon!.Visible = true;
-                    }
-                };
+                this.Load += (_, _) => Start();
+            }
+
+            // 同时勾选了最小化到托盘，启动后直接隐藏到托盘（不显示窗口）
+            if (chkAutoStart.Checked && chkMinimizeToTray.Checked)
+            {
+                _startToTray = true;
             }
         }
 
@@ -597,6 +595,25 @@ namespace WeatherUdpSender
                 Application.Exit();
             });
             _trayIcon.ContextMenuStrip = menu;
+
+            // 如果需要启动到托盘，现在显示托盘图标
+            if (_startToTray)
+            {
+                _trayIcon.Visible = true;
+            }
+        }
+
+        /// <summary>
+        /// 重写SetVisibleCore，启动时如果要最小化到托盘则不显示窗口
+        /// </summary>
+        protected override void SetVisibleCore(bool value)
+        {
+            if (_startToTray && !IsHandleCreated)
+            {
+                CreateHandle();
+                return;
+            }
+            base.SetVisibleCore(value);
         }
 
         /// <summary>
