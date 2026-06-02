@@ -40,6 +40,10 @@ namespace WeatherUdpSender
         private volatile bool _running;
         private int _sendCount;
 
+        // 系统托盘
+        private NotifyIcon? _trayIcon;
+        private CheckBox chkMinimizeToTray = null!;
+
         // 缓存的公共数据
         private string _aqiLevel = "";
         private string _uvLevel = "";
@@ -88,6 +92,7 @@ namespace WeatherUdpSender
             var lblInt = new Label { Text = "间隔(分):", Left = 350, Top = y + 4, Width = 60 };
             numInterval = new NumericUpDown { Left = 414, Top = y, Width = 55, Minimum = 1, Maximum = 120, Value = 10 };
             chkAutoStart = new CheckBox { Text = "开机自动启动", Left = 490, Top = y + 3, Width = 110 };
+            chkMinimizeToTray = new CheckBox { Text = "最小化到托盘", Left = 610, Top = y + 3, Width = 110 };
             y += 36;
 
             btnStart = new Button { Text = "启动", Left = 12, Top = y, Width = 80, Height = 30 };
@@ -126,8 +131,11 @@ namespace WeatherUdpSender
             this.Controls.AddRange(new Control[]
             {
                 lblInfo, lblIp, txtIp, lblPort, txtPort, lblInt, numInterval,
-                chkAutoStart, btnStart, btnOnce, btnClear, lblStatus, lblFormat, lblFormat2, lstLog
+                chkAutoStart, chkMinimizeToTray, btnStart, btnOnce, btnClear, lblStatus, lblFormat, lblFormat2, lstLog
             });
+
+            // 初始化系统托盘
+            InitTrayIcon();
         }
 
         /// <summary>
@@ -147,6 +155,7 @@ namespace WeatherUdpSender
                         if (cfg.Port > 0) txtPort.Text = cfg.Port.ToString();
                         if (cfg.Interval > 0) numInterval.Value = cfg.Interval;
                         chkAutoStart.Checked = cfg.AutoStart;
+                        chkMinimizeToTray.Checked = cfg.MinimizeToTray;
                     }
                 }
             }
@@ -172,7 +181,8 @@ namespace WeatherUdpSender
                     Ip = txtIp.Text.Trim(),
                     Port = int.TryParse(txtPort.Text.Trim(), out int p) ? p : 9999,
                     Interval = (int)numInterval.Value,
-                    AutoStart = chkAutoStart.Checked
+                    AutoStart = chkAutoStart.Checked,
+                    MinimizeToTray = chkMinimizeToTray.Checked
                 };
                 string json = JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(ConfigPath, json);
@@ -538,8 +548,76 @@ namespace WeatherUdpSender
             { lstLog.Items.Insert(0, line); if (lstLog.Items.Count > 500) lstLog.Items.RemoveAt(lstLog.Items.Count - 1); }
         }
 
+        /// <summary>
+        /// 初始化系统托盘图标
+        /// </summary>
+        private void InitTrayIcon()
+        {
+            _trayIcon = new NotifyIcon();
+            _trayIcon.Text = "广州景点天气UDP推送";
+
+            // 使用嵌入资源中的图标
+            try
+            {
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                var stream = assembly.GetManifestResourceStream("WeatherUdpSender.app.ico");
+                if (stream != null)
+                    _trayIcon.Icon = new System.Drawing.Icon(stream);
+            }
+            catch { }
+
+            // 双击托盘图标恢复窗口
+            _trayIcon.DoubleClick += (_, _) => ShowFromTray();
+
+            // 右键菜单
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("显示主窗口", null, (_, _) => ShowFromTray());
+            menu.Items.Add("-");
+            menu.Items.Add("退出", null, (_, _) =>
+            {
+                _trayIcon.Visible = false;
+                SaveConfig();
+                Stop();
+                Application.Exit();
+            });
+            _trayIcon.ContextMenuStrip = menu;
+        }
+
+        /// <summary>
+        /// 从托盘恢复窗口
+        /// </summary>
+        private void ShowFromTray()
+        {
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+            this.Activate();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            // 最小化时隐藏到托盘
+            if (chkMinimizeToTray.Checked && this.WindowState == FormWindowState.Minimized)
+            {
+                this.Hide();
+                _trayIcon!.Visible = true;
+                _trayIcon.ShowBalloonTip(2000, "广州景点天气UDP推送", "程序已最小化到托盘，双击图标恢复", ToolTipIcon.Info);
+            }
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            // 如果勾选了最小化到托盘且不是真正退出，则隐藏到托盘
+            if (chkMinimizeToTray.Checked && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                this.Hide();
+                _trayIcon!.Visible = true;
+                _trayIcon.ShowBalloonTip(2000, "广州景点天气UDP推送", "程序已最小化到托盘，双击图标恢复", ToolTipIcon.Info);
+                return;
+            }
+
+            _trayIcon?.Dispose();
             SaveConfig();
             Stop();
             base.OnFormClosing(e);
@@ -569,6 +647,7 @@ namespace WeatherUdpSender
         public int Port { get; set; } = 9999;
         public int Interval { get; set; } = 10;
         public bool AutoStart { get; set; } = false;
+        public bool MinimizeToTray { get; set; } = false;
     }
 
     static class Program
