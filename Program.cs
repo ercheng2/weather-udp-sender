@@ -169,10 +169,10 @@ namespace WeatherUdpSender
                 if (_trayIcon != null) _trayIcon.Visible = true;
             }
 
-            // 开机自动启动：直接启动（不依赖Load/Shown事件，因为最小化到托盘时这些事件不触发）
+            // 开机自动启动：等窗口句柄创建后再启动（否则Invoke会报错）
             if (chkAutoStart.Checked)
             {
-                Start();
+                this.HandleCreated += (_, _) => Start();
             }
         }
 
