@@ -566,6 +566,13 @@ namespace WeatherUdpSender
             }
             catch { }
 
+            // 如果没加载到图标，用系统默认图标
+            if (_trayIcon.Icon == null)
+            {
+                try { _trayIcon.Icon = System.Drawing.SystemIcons.Information; }
+                catch { }
+            }
+
             // 双击托盘图标恢复窗口
             _trayIcon.DoubleClick += (_, _) => ShowFromTray();
 
@@ -653,6 +660,14 @@ namespace WeatherUdpSender
     static class Program
     {
         [STAThread]
-        static void Main() { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); ApplicationConfiguration.Initialize(); Application.Run(new MainForm()); }
+        static void Main()
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            ApplicationConfiguration.Initialize();
+            Application.ThreadException += (s, e) => MessageBox.Show(e.Exception.ToString(), "未处理异常");
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => MessageBox.Show(e.ExceptionObject?.ToString(), "致命错误");
+            Application.Run(new MainForm());
+        }
     }
 }
