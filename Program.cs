@@ -603,11 +603,11 @@ namespace WeatherUdpSender
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            // 最小化时隐藏到托盘
-            if (chkMinimizeToTray.Checked && this.WindowState == FormWindowState.Minimized)
+            // 最小化时隐藏到托盘（需检查控件是否已初始化）
+            if (chkMinimizeToTray != null && chkMinimizeToTray.Checked && this.WindowState == FormWindowState.Minimized && _trayIcon != null)
             {
                 this.Hide();
-                _trayIcon!.Visible = true;
+                _trayIcon.Visible = true;
                 _trayIcon.ShowBalloonTip(2000, "广州景点天气UDP推送", "程序已最小化到托盘，双击图标恢复", ToolTipIcon.Info);
             }
         }
@@ -615,11 +615,11 @@ namespace WeatherUdpSender
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             // 如果勾选了最小化到托盘且不是真正退出，则隐藏到托盘
-            if (chkMinimizeToTray.Checked && e.CloseReason == CloseReason.UserClosing)
+            if (chkMinimizeToTray != null && chkMinimizeToTray.Checked && e.CloseReason == CloseReason.UserClosing && _trayIcon != null)
             {
                 e.Cancel = true;
                 this.Hide();
-                _trayIcon!.Visible = true;
+                _trayIcon.Visible = true;
                 _trayIcon.ShowBalloonTip(2000, "广州景点天气UDP推送", "程序已最小化到托盘，双击图标恢复", ToolTipIcon.Info);
                 return;
             }
