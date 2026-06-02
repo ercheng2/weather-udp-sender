@@ -111,7 +111,7 @@ namespace WeatherUdpSender
             y += 20;
             var lblFormat2 = new Label
             {
-                Text = "预报格式: 明天|天气|最高温|最低温;后天|天气|最高温|最低温;大后天|天气|最高温|最低温",
+                Text = "预报格式: 明天|天气|最高温|最低温|风向风力;后天|天气|最高温|最低温|风向风力;大后天|天气|最高温|最低温|风向风力",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
             };
@@ -342,7 +342,7 @@ namespace WeatherUdpSender
             string windForce = FormatWindForce(windDirNum, windSpeed);
 
             // 未来三天预报：desc_f索引 2=明天 3=后天 4=大后天
-            string forecast = BuildForecast(descF, maxt, mint, todayI);
+            string forecast = BuildForecast(descF, maxt, mint, windd, winds, todayI);
 
             return new SpotData
             {
@@ -364,9 +364,9 @@ namespace WeatherUdpSender
 
         /// <summary>
         /// 构建未来三天预报字符串
-        /// 格式: 明天|天气|最高温|最低温;后天|天气|最高温|最低温;大后天|天气|最高温|最低温
+        /// 格式: 明天|天气|最高温|最低温|风向风力;后天|天气|最高温|最低温|风向风力;大后天|天气|最高温|最低温|风向风力
         /// </summary>
-        private static string BuildForecast(string[] descF, double[] maxt, double[] mint, int todayI)
+        private static string BuildForecast(string[] descF, double[] maxt, double[] mint, double[] windd, double[] winds, int todayI)
         {
             string[] labels = { "明天", "后天", "大后天" };
             string[] parts = new string[3];
@@ -379,10 +379,47 @@ namespace WeatherUdpSender
                 double lo = Val(mint, fIdx);
                 string hiStr = hi > -900 ? hi.ToString("F0") : "--";
                 string loStr = lo > -900 ? lo.ToString("F0") : "--";
-                parts[d] = $"{labels[d]}|{weather}|{hiStr}|{loStr}";
+
+                // 取预报日白天(6-18时)最大风速及其风向
+                string windStr = GetDaytimeWind(windd, winds, fIdx);
+
+                parts[d] = $"{labels[d]}|{weather}|{hiStr}|{loStr}|{windStr}";
             }
 
             return string.Join(";", parts);
+        }
+
+        /// <summary>
+        /// 获取指定预报日的白天代表风力（取6-18时最大风速及对应风向）
+        /// </summary>
+        private static string GetDaytimeWind(double[] windd, double[] winds, int dayIdx)
+        {
+            if (windd == null || winds == null || windd.Length == 0 || winds.Length == 0)
+                return "微风";
+
+            // 找白天6-18时最大风速
+            int startH = dayIdx * 24 + 6;
+            int endH = dayIdx * 24 + 18;
+            double maxSpeed = -1;
+            int bestIdx = -1;
+
+            for (int h = startH; h <= endH && h < winds.Length; h++)
+            {
+                if (h < 0) continue;
+                double spd = winds[h];
+                if (spd < -900) continue;
+                if (spd > maxSpeed)
+                {
+                    maxSpeed = spd;
+                    bestIdx = h;
+                }
+            }
+
+            if (bestIdx < 0 || maxSpeed < 0)
+                return "微风";
+
+            int dirNum = (bestIdx < windd.Length) ? (int)windd[bestIdx] : 0;
+            return FormatWindForce(dirNum, maxSpeed);
         }
 
         /// <summary>
