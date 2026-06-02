@@ -243,9 +243,7 @@ namespace WeatherUdpSender
                         _udpClient!.Send(bytes, bytes.Length, endpoint);
                         _sendCount++;
                         ok++;
-                        string minMax = "";
-                        if (w.MinT > -900 && w.MaxT > -900) minMax = $" ({w.MinT:F0}~{w.MaxT:F0}°C)";
-                        Log($"  {name}: {w.Temp:F1}°C{minMax} {w.Desc} 湿度{w.Rh:F0}% 体感{w.Feels:F1}°C 空气质量:{w.Aqi} 紫外线:{w.UvIndex}({w.UvLevel}) {w.WindForce}");
+                        Log($"  {name}: {w.Temp:F1}°C {minMax} {w.Desc} 湿度{w.Rh:F0}% 体感{w.Feels:F1}°C 空气质量:{w.Aqi} 紫外线:{w.UvIndex}({w.UvLevel}) {w.WindForce}");
                         Log($"    预报: {w.Forecast}");
                     }
                     catch (Exception ex)
