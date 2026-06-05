@@ -36,9 +36,13 @@ namespace WeatherUdpSender
         private Label lblStatus = null!;
 
         private System.Threading.Timer? _timer;
+        private System.Threading.Timer? _retryTimer;
         private UdpClient? _udpClient;
         private volatile bool _running;
         private int _sendCount;
+        private int _fetchRetryCount = 0;
+        private const int MAX_RETRIES = 5;
+        private bool _isAutoStarting = false;
 
         // 系统托盘
         private NotifyIcon? _trayIcon;
@@ -172,6 +176,7 @@ namespace WeatherUdpSender
             // 开机自动启动：等窗口句柄创建后再启动（否则Invoke会报错）
             if (chkAutoStart.Checked)
             {
+                _isAutoStarting = true;
                 this.HandleCreated += (_, _) => Start();
             }
         }
@@ -212,12 +217,17 @@ namespace WeatherUdpSender
 
             _running = true;
             _sendCount = 0;
+            _fetchRetryCount = 0;
             btnStart.Text = "停止";
             lblStatus.Text = "状态：运行中";
             lblStatus.ForeColor = System.Drawing.Color.Green;
             _udpClient = new UdpClient();
             int intervalMin = (int)numInterval.Value;
-            _timer = new System.Threading.Timer(_ => FetchAndSend(), null, 0, intervalMin * 60 * 1000);
+
+            // 开机自启时延迟30秒首次获取，等待网络就绪
+            int firstDelay = _isAutoStarting ? 30000 : 0;
+            _isAutoStarting = false;
+            _timer = new System.Threading.Timer(_ => FetchAndSend(), null, firstDelay, intervalMin * 60 * 1000);
 
             SaveConfig();
         }
@@ -226,6 +236,7 @@ namespace WeatherUdpSender
         {
             _running = false;
             _timer?.Dispose(); _timer = null;
+            _retryTimer?.Dispose(); _retryTimer = null;
             _udpClient?.Close(); _udpClient = null;
             btnStart.Text = "启动";
             lblStatus.Text = "状态：已停止";
@@ -237,6 +248,7 @@ namespace WeatherUdpSender
             bool singleShot = !_running;
             if (singleShot) _udpClient = new UdpClient();
 
+            int ok = 0, fail = 0;
             try
             {
                 string ip = this.Invoke(() => txtIp.Text.Trim());
@@ -245,8 +257,6 @@ namespace WeatherUdpSender
 
                 // 1. 先获取公共数据：空气质量和紫外线
                 FetchPublicData();
-
-                int ok = 0, fail = 0;
 
                 for (int i = 0; i < Spots.Length; i++)
                 {
@@ -272,6 +282,9 @@ namespace WeatherUdpSender
                 }
 
                 Log($"✓ {ok}/{Spots.Length}景点推送完成, 累计{_sendCount}条 → {ip}:{port}");
+
+                // 成功则重置重试计数
+                if (ok > 0) _fetchRetryCount = 0;
             }
             catch (Exception ex)
             {
@@ -280,6 +293,16 @@ namespace WeatherUdpSender
             finally
             {
                 if (singleShot) { _udpClient?.Close(); _udpClient = null; }
+            }
+
+            // 如果所有景点都失败且正在运行中，自动重试（网络可能未就绪）
+            if (_running && ok == 0 && fail > 0 && _fetchRetryCount < MAX_RETRIES)
+            {
+                _fetchRetryCount++;
+                int retrySec = _fetchRetryCount * 30; // 30s, 60s, 90s, 120s, 150s
+                Log($"⚠ 网络可能未就绪，{retrySec}秒后自动重试({_fetchRetryCount}/{MAX_RETRIES})...");
+                _retryTimer?.Dispose();
+                _retryTimer = new System.Threading.Timer(_ => FetchAndSend(), null, retrySec * 1000, Timeout.Infinite);
             }
         }
 
