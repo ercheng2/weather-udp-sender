@@ -165,10 +165,7 @@ namespace WeatherUdpSender
             if (chkAutoStart.Checked)
             {
                 _isAutoStarting = true;
-                if (this.IsHandleCreated)
-                    Start();
-                else
-                    this.HandleCreated += (_, _) => Start();
+                this.Shown += (_, _) => Start();
             }
         }
 
@@ -212,7 +209,7 @@ namespace WeatherUdpSender
             _udpClient = new UdpClient();
             int intervalMin = (int)numInterval.Value;
 
-            int firstDelay = _isAutoStarting ? 30000 : 0;
+            int firstDelay = _isAutoStarting ? 3000 : 0;
             _isAutoStarting = false;
             _timer = new System.Threading.Timer(_ => FetchAndSend(), null, firstDelay, intervalMin * 60 * 1000);
 
@@ -325,8 +322,9 @@ namespace WeatherUdpSender
             {
                 result.Forecast = FetchForecast(code);
             }
-            catch
+            catch (Exception ex)
             {
+                Log($"  ⚠ {name} 预报获取失败: {ex.Message}");
                 result.Forecast = "";
             }
 
