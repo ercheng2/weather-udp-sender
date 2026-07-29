@@ -113,7 +113,7 @@ namespace WeatherUdpSender
 
             var lblFormat = new Label
             {
-                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,紫外线XX(XX),天气,风向风力,时间",
+                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低;后天|...;大后天|...",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
             };
@@ -245,12 +245,13 @@ namespace WeatherUdpSender
                         var w = FetchCityWeather(name, code);
                         // 绝对湿度 g/m³
                         string absHum = w.AbsHumidity > 0 ? $"{w.AbsHumidity:F1}g/m³" : "--";
-                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time}";
+                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         _udpClient!.Send(bytes, bytes.Length, endpoint);
                         _sendCount++;
                         ok++;
-                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}");
+                        string fc = string.IsNullOrEmpty(w.Forecast) ? "" : $" | 预报:{w.Forecast}";
+                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
                     }
                     catch (Exception ex)
                     {
@@ -312,6 +313,16 @@ namespace WeatherUdpSender
             result.Time = time;
             result.Aqi = !string.IsNullOrEmpty(aqi) ? $"{aqi}" : (!string.IsNullOrEmpty(aqiPm25) ? $"PM2.5:{aqiPm25}" : "--");
 
+            // 5. 获取三天预报
+            try
+            {
+                result.Forecast = FetchForecast(code);
+            }
+            catch
+            {
+                result.Forecast = "";
+            }
+
             // 2. 计算体感温度 (Heat Index)
             result.Feels = CalcFeelsLike(temp, sd);
 
@@ -335,6 +346,38 @@ namespace WeatherUdpSender
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 从 weather.com.cn 7天预报页面提取未来三天预报
+        /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
+        /// </summary>
+        private static string FetchForecast(string code)
+        {
+            string url = $"http://www.weather.com.cn/weather/{code}.shtml";
+            string html = _http.GetStringAsync(url).GetAwaiter().GetResult();
+
+            // 匹配每个预报日: <h1>日期</h1>...<p class="wea">天气</p>...<span>最高</span>/<i>最低℃</i>...<p class="win">...<i>风力</i>
+            var pattern = @"<h1>(\d+日[^<]*)</h1>.*?<p title=""([^""]*)"" class=""wea"">.*?<span>(\d+)</span>/\s*<i>(\d+)℃</i>";
+            var matches = System.Text.RegularExpressions.Regex.Matches(html, pattern, System.Text.RegularExpressions.RegexOptions.Singleline);
+
+            var forecasts = new List<string>();
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                if (forecasts.Count >= 3) break;
+                string date = m.Groups[1].Value;
+                string weather = m.Groups[2].Value;
+                string high = m.Groups[3].Value;
+                string low = m.Groups[4].Value;
+
+                // 跳过"今天"
+                if (date.Contains("今天")) continue;
+
+                string label = forecasts.Count == 0 ? "明天" : (forecasts.Count == 1 ? "后天" : "大后天");
+                forecasts.Add($"{label}|{weather}|{high}|{low}");
+            }
+
+            return string.Join(";", forecasts);
         }
 
         /// <summary>
@@ -509,6 +552,7 @@ namespace WeatherUdpSender
         public string UvLevel = "";
         public string WindForce = "";
         public string Time = "";
+        public string Forecast = ""; // 三天预报: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
     }
 
     public class ConfigData
