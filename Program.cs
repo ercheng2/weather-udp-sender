@@ -12,15 +12,17 @@ namespace WeatherUdpSender
 {
     public class MainForm : Form
     {
-        // 6个景点：名称、经度、纬度
-        private static readonly (string Name, double Lon, double Lat)[] Spots = new[]
+        // 8个城市：名称、weather.com.cn城市代码
+        private static readonly (string Name, string Code)[] Cities = new[]
         {
-            ("白云山风景名胜区", 113.306258, 23.191448),
-            ("长隆旅游度假区", 113.331839, 23.005809),
-            ("萝岗香雪公园", 113.55, 23.1667),
-            ("海心桥", 113.32, 23.11),
-            ("南海神庙", 113.503936, 23.087264),
-            ("陈家祠", 113.252777, 23.131612),
+            ("固阳",       "101080205"),
+            ("东胜",       "101080713"),
+            ("达拉特旗",   "101080703"),
+            ("北京",       "101010100"),
+            ("达茂旗",     "101080206"),
+            ("鄂尔多斯",   "101080701"),
+            ("呼和浩特",   "101080101"),
+            ("银川",       "101170101"),
         };
 
         // 配置文件路径
@@ -47,14 +49,13 @@ namespace WeatherUdpSender
         // 系统托盘
         private NotifyIcon? _trayIcon;
         private CheckBox chkMinimizeToTray = null!;
-        private bool _startToTray = false; // 启动时直接隐藏到托盘
+        private bool _startToTray = false;
 
-        // 缓存的公共数据
-        private string _aqiLevel = "";
-        private string _uvLevel = "";
-        private string _uvIndex = "";
-
-        private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+        private static readonly HttpClient _http = new()
+        {
+            Timeout = TimeSpan.FromSeconds(15),
+            DefaultRequestHeaders = { { "Referer", "http://www.weather.com.cn/" } }
+        };
 
         public MainForm()
         {
@@ -64,13 +65,12 @@ namespace WeatherUdpSender
 
         private void InitUI()
         {
-            this.Text = "广州景点天气UDP推送";
+            this.Text = "多城市天气UDP推送";
             this.Size = new System.Drawing.Size(860, 600);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
 
-            // 加载图标（从嵌入资源读取）
             try
             {
                 var assembly = System.Reflection.Assembly.GetExecutingAssembly();
@@ -84,7 +84,7 @@ namespace WeatherUdpSender
 
             var lblInfo = new Label
             {
-                Text = "6个广州景点实时天气 | UDP纯文本推送 | 数据源：广州气象局",
+                Text = $"8城市实时天气 | UDP推送 | 数据源：weather.com.cn | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
@@ -111,17 +111,9 @@ namespace WeatherUdpSender
             lblStatus = new Label { Text = "状态：已停止", Left = 12, Top = y, Width = 400, ForeColor = System.Drawing.Color.Gray };
             y += 22;
 
-            // UDP格式说明
             var lblFormat = new Label
             {
-                Text = "UDP格式: 景点名,温度XX°C(最低~最高),天气,体感XX°C,湿度XX%,降雨XXmm,空气质量,紫外线,风向风力,三天预报",
-                Left = 12, Top = y, Width = 820, Height = 18,
-                ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
-            };
-            y += 20;
-            var lblFormat2 = new Label
-            {
-                Text = "预报格式: 明天|天气|最高温|最低温|风向风力;后天|天气|最高温|最低温|风向风力;大后天|天气|最高温|最低温|风向风力",
+                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,紫外线XX(XX),天气,风向风力,时间",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
             };
@@ -129,23 +121,19 @@ namespace WeatherUdpSender
 
             lstLog = new ListBox
             {
-                Left = 12, Top = y, Width = 820, Height = 290,
+                Left = 12, Top = y, Width = 820, Height = 310,
                 Font = new System.Drawing.Font("Consolas", 9f)
             };
 
             this.Controls.AddRange(new Control[]
             {
                 lblInfo, lblIp, txtIp, lblPort, txtPort, lblInt, numInterval,
-                chkAutoStart, chkMinimizeToTray, btnStart, btnOnce, btnClear, lblStatus, lblFormat, lblFormat2, lstLog
+                chkAutoStart, chkMinimizeToTray, btnStart, btnOnce, btnClear, lblStatus, lblFormat, lstLog
             });
 
-            // 初始化系统托盘
             InitTrayIcon();
         }
 
-        /// <summary>
-        /// 加载配置文件
-        /// </summary>
         private void LoadConfig()
         {
             try
@@ -166,14 +154,12 @@ namespace WeatherUdpSender
             }
             catch { }
 
-            // 开机自动启动+最小化到托盘，标记直接隐藏
             if (chkAutoStart.Checked && chkMinimizeToTray.Checked)
             {
                 _startToTray = true;
                 if (_trayIcon != null) _trayIcon.Visible = true;
             }
 
-            // 开机自动启动：等窗口句柄创建后再启动（否则Invoke会报错）
             if (chkAutoStart.Checked)
             {
                 _isAutoStarting = true;
@@ -181,9 +167,6 @@ namespace WeatherUdpSender
             }
         }
 
-        /// <summary>
-        /// 保存配置文件
-        /// </summary>
         private void SaveConfig()
         {
             try
@@ -224,7 +207,6 @@ namespace WeatherUdpSender
             _udpClient = new UdpClient();
             int intervalMin = (int)numInterval.Value;
 
-            // 开机自启时延迟30秒首次获取，等待网络就绪
             int firstDelay = _isAutoStarting ? 30000 : 0;
             _isAutoStarting = false;
             _timer = new System.Threading.Timer(_ => FetchAndSend(), null, firstDelay, intervalMin * 60 * 1000);
@@ -255,24 +237,20 @@ namespace WeatherUdpSender
                 int port = int.Parse(this.Invoke(() => txtPort.Text.Trim()));
                 var endpoint = new IPEndPoint(IPAddress.Parse(ip), port);
 
-                // 1. 先获取公共数据：空气质量和紫外线
-                FetchPublicData();
-
-                for (int i = 0; i < Spots.Length; i++)
+                for (int i = 0; i < Cities.Length; i++)
                 {
-                    var (name, lon, lat) = Spots[i];
+                    var (name, code) = Cities[i];
                     try
                     {
-                        var w = FetchSpotWeather(name, lon, lat);
-                        // UDP中文标注格式，方便直接阅读
-                        string minMax = (w.MinT > -900 && w.MaxT > -900) ? $"({w.MinT:F0}~{w.MaxT:F0}°C)" : "";
-                        string msg = $"{w.Name},温度{w.Temp:F1}°C{minMax},{w.Desc},体感{w.Feels:F1}°C,湿度{w.Rh:F0}%,降雨{w.Rain:F1}mm,空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.WindForce},{w.Forecast}";
+                        var w = FetchCityWeather(name, code);
+                        // 绝对湿度 g/m³
+                        string absHum = w.AbsHumidity > 0 ? $"{w.AbsHumidity:F1}g/m³" : "--";
+                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         _udpClient!.Send(bytes, bytes.Length, endpoint);
                         _sendCount++;
                         ok++;
-                        Log($"  {name}: {w.Temp:F1}°C {minMax} {w.Desc} 湿度{w.Rh:F0}% 体感{w.Feels:F1}°C 空气质量:{w.Aqi} 紫外线:{w.UvIndex}({w.UvLevel}) {w.WindForce}");
-                        Log($"    预报: {w.Forecast}");
+                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}");
                     }
                     catch (Exception ex)
                     {
@@ -281,9 +259,8 @@ namespace WeatherUdpSender
                     }
                 }
 
-                Log($"✓ {ok}/{Spots.Length}景点推送完成, 累计{_sendCount}条 → {ip}:{port}");
+                Log($"✓ {ok}/{Cities.Length}城市推送完成, 累计{_sendCount}条 → {ip}:{port}");
 
-                // 成功则重置重试计数
                 if (ok > 0) _fetchRetryCount = 0;
             }
             catch (Exception ex)
@@ -295,11 +272,10 @@ namespace WeatherUdpSender
                 if (singleShot) { _udpClient?.Close(); _udpClient = null; }
             }
 
-            // 如果所有景点都失败且正在运行中，自动重试（网络可能未就绪）
             if (_running && ok == 0 && fail > 0 && _fetchRetryCount < MAX_RETRIES)
             {
                 _fetchRetryCount++;
-                int retrySec = _fetchRetryCount * 30; // 30s, 60s, 90s, 120s, 150s
+                int retrySec = _fetchRetryCount * 30;
                 Log($"⚠ 网络可能未就绪，{retrySec}秒后自动重试({_fetchRetryCount}/{MAX_RETRIES})...");
                 _retryTimer?.Dispose();
                 _retryTimer = new System.Threading.Timer(_ => FetchAndSend(), null, retrySec * 1000, Timeout.Infinite);
@@ -307,225 +283,69 @@ namespace WeatherUdpSender
         }
 
         /// <summary>
-        /// 获取公共数据：空气质量和紫外线指数（全广州统一）
+        /// 获取单个城市的天气数据
+        /// 数据源: d1.weather.com.cn/sk_2d/ (实时+AQI) + m.weather.com.cn/data/ (紫外线)
         /// </summary>
-        private void FetchPublicData()
+        private CityData FetchCityWeather(string name, string code)
         {
+            var result = new CityData { Name = name };
+
+            // 1. 获取实时天气数据 (含温度、湿度、AQI、风向风力等)
+            string skUrl = $"http://d1.weather.com.cn/sk_2d/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            string skJs = _http.GetStringAsync(skUrl).GetAwaiter().GetResult();
+            string skJson = ExtractDataSK(skJs);
+            using var skDoc = JsonDocument.Parse(skJson);
+
+            double temp = double.TryParse(skDoc.RootElement.TryGetProperty("temp", out var te) ? te.GetString() : "", out var tv) ? tv : -999;
+            double sd = double.TryParse(skDoc.RootElement.TryGetProperty("sd", out var sdEl) ? sdEl.GetString()?.Replace("%", "") : "", out var sdv) ? sdv : 0;
+            string wd = (skDoc.RootElement.TryGetProperty("WD", out var wdEl) ? wdEl.GetString() : "") ?? "";
+            string ws = (skDoc.RootElement.TryGetProperty("WS", out var wsEl) ? wsEl.GetString() : "") ?? "";
+            string weather = (skDoc.RootElement.TryGetProperty("weather", out var we) ? we.GetString() : "") ?? "";
+            string aqi = (skDoc.RootElement.TryGetProperty("aqi", out var a) ? a.GetString() : "") ?? "";
+            string aqiPm25 = (skDoc.RootElement.TryGetProperty("aqi_pm25", out var ap) ? ap.GetString() : "") ?? "";
+            string time = (skDoc.RootElement.TryGetProperty("time", out var ti) ? ti.GetString() : "") ?? "";
+
+            result.Temp = temp;
+            result.Rh = sd;
+            result.Desc = weather;
+            result.WindForce = $"{wd}{ws}";
+            result.Time = time;
+            result.Aqi = !string.IsNullOrEmpty(aqi) ? $"{aqi}" : (!string.IsNullOrEmpty(aqiPm25) ? $"PM2.5:{aqiPm25}" : "--");
+
+            // 2. 计算体感温度 (Heat Index)
+            result.Feels = CalcFeelsLike(temp, sd);
+
+            // 3. 计算绝对湿度 (g/m³)
+            result.AbsHumidity = CalcAbsHumidity(temp, sd);
+
+            // 4. 获取紫外线指数
             try
             {
-                string aqiJs = _http.GetStringAsync("http://www.tqyb.com.cn/data/gzWeather/gz_aqi.js").GetAwaiter().GetResult();
-                string aqiJson = ExtractJson(aqiJs);
-                using var aqiDoc = JsonDocument.Parse(aqiJson);
-                var aqiRoot = aqiDoc.RootElement;
-                _aqiLevel = aqiRoot.TryGetProperty("aqi_level", out var al) ? al.GetString()?.Trim() ?? "" : "";
+                string uvUrl = $"http://m.weather.com.cn/data/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+                string uvJson = _http.GetStringAsync(uvUrl).GetAwaiter().GetResult();
+                using var uvDoc = JsonDocument.Parse(uvJson);
+                var wi = uvDoc.RootElement.GetProperty("weatherinfo");
+                result.UvIndex = wi.TryGetProperty("index_uv", out var uv) ? uv.GetString() ?? "--" : "--";
+                result.UvLevel = result.UvIndex; // weather.com.cn的index_uv直接是"中等""很强"等中文描述
             }
-            catch { _aqiLevel = ""; }
-
-            try
+            catch
             {
-                string livingJs = _http.GetStringAsync("http://www.tqyb.com.cn/data/gzWeather/livingIndex.js").GetAwaiter().GetResult();
-                string livingJson = ExtractJson(livingJs);
-                using var livingDoc = JsonDocument.Parse(livingJson);
-                var livingRoot = livingDoc.RootElement;
-                if (livingRoot.TryGetProperty("ultraviolet", out var uv))
-                {
-                    _uvIndex = uv.TryGetProperty("index", out var idx) ? idx.GetString()?.Trim() ?? "" : "";
-                    _uvLevel = uv.TryGetProperty("level", out var lv) ? lv.GetString()?.Trim() ?? "" : "";
-                }
-            }
-            catch { _uvIndex = ""; _uvLevel = ""; }
-        }
-
-        private SpotData FetchSpotWeather(string name, double lon, double lat)
-        {
-            int lonKey = (int)(Math.Floor(lon / 0.05) * 0.05 * 100);
-            int latKey = (int)(Math.Floor(lat / 0.05) * 0.05 * 100);
-
-            string url = $"http://www.tqyb.com.cn/data/giftDailyCache/giftDaily{lonKey}_{latKey}.js";
-            string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
-            string json = ExtractJson(js);
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            double[] giftT = ReadArr(root, "gift_t");
-            double[] tigT = ReadArr(root, "tig_t");
-            double[] rh2m = ReadArr(root, "gift_rh2m");
-            double[] rain = ReadArr(root, "gift_rain");
-            double[] maxt = ReadArr(root, "maxt");
-            double[] mint = ReadArr(root, "mint");
-            double[] windd = ReadArr(root, "gift_windd");
-            double[] winds = ReadArr(root, "gift_winds");
-            string[] descF = ReadStrArr(root, "desc_f");
-
-            // 当前小时索引
-            int hour = DateTime.Now.Hour;
-            int hourIdx = (hour - 20 + 24) % 24;
-            int dayBlock = hour >= 20 ? 1 : 0;
-            int idx = dayBlock * 24 + hourIdx;
-
-            double temp = Val(giftT, idx);
-            double feels = Val(tigT, idx);
-            double rh = Val(rh2m, idx);
-            double rainVal = Val(rain, idx);
-
-            int todayI = hour >= 20 ? 2 : 1;
-            double maxT = Val(maxt, todayI);
-            double minT = Val(mint, todayI);
-            if (temp > -900 && maxT > -900) maxT = Math.Max(maxT, temp);
-            if (temp > -900 && minT > -900) minT = Math.Min(minT, temp);
-
-            string desc = descF.Length > 1 ? descF[1] : (descF.Length > 0 ? descF[0] : "未知");
-
-            // 风向风力
-            int windDirNum = (int)Val(windd, idx);
-            double windSpeed = Val(winds, idx);
-            string windForce = FormatWindForce(windDirNum, windSpeed);
-
-            // 未来三天预报：desc_f索引 2=明天 3=后天 4=大后天
-            string forecast = BuildForecast(descF, maxt, mint, windd, winds, todayI);
-
-            return new SpotData
-            {
-                Name = name,
-                Temp = temp,
-                MinT = minT,
-                MaxT = maxT,
-                Feels = feels,
-                Rh = rh,
-                Desc = desc,
-                Rain = rainVal,
-                Aqi = _aqiLevel,
-                UvIndex = _uvIndex,
-                UvLevel = _uvLevel,
-                WindForce = windForce,
-                Forecast = forecast
-            };
-        }
-
-        /// <summary>
-        /// 构建未来三天预报字符串
-        /// 格式: 明天|天气|最高温|最低温|风向风力;后天|天气|最高温|最低温|风向风力;大后天|天气|最高温|最低温|风向风力
-        /// </summary>
-        private static string BuildForecast(string[] descF, double[] maxt, double[] mint, double[] windd, double[] winds, int todayI)
-        {
-            string[] labels = { "明天", "后天", "大后天" };
-            string[] parts = new string[3];
-
-            for (int d = 0; d < 3; d++)
-            {
-                int fIdx = todayI + 1 + d;
-                string weather = (fIdx < descF.Length) ? descF[fIdx] : "未知";
-                double hi = Val(maxt, fIdx);
-                double lo = Val(mint, fIdx);
-                string hiStr = hi > -900 ? hi.ToString("F0") : "--";
-                string loStr = lo > -900 ? lo.ToString("F0") : "--";
-
-                // 取预报日白天(6-18时)最大风速及其风向
-                string windStr = GetDaytimeWind(windd, winds, fIdx);
-
-                parts[d] = $"{labels[d]}|{weather}|{hiStr}|{loStr}|{windStr}";
+                result.UvIndex = "--";
+                result.UvLevel = "--";
             }
 
-            return string.Join(";", parts);
+            return result;
         }
 
         /// <summary>
-        /// 获取指定预报日的白天代表风力（取6-18时最大风速及对应风向）
+        /// 从 sk_2d 的 JSONP 响应中提取 JSON
+        /// 格式: var dataSK={...}
         /// </summary>
-        private static string GetDaytimeWind(double[] windd, double[] winds, int dayIdx)
-        {
-            if (windd == null || winds == null || windd.Length == 0 || winds.Length == 0)
-                return "微风";
-
-            // 找白天6-18时最大风速
-            int startH = dayIdx * 24 + 6;
-            int endH = dayIdx * 24 + 18;
-            double maxSpeed = -1;
-            int bestIdx = -1;
-
-            for (int h = startH; h <= endH && h < winds.Length; h++)
-            {
-                if (h < 0) continue;
-                double spd = winds[h];
-                if (spd < -900) continue;
-                if (spd > maxSpeed)
-                {
-                    maxSpeed = spd;
-                    bestIdx = h;
-                }
-            }
-
-            if (bestIdx < 0 || maxSpeed < 0)
-                return "微风";
-
-            int dirNum = (bestIdx < windd.Length) ? (int)windd[bestIdx] : 0;
-            return FormatWindForce(dirNum, maxSpeed);
-        }
-
-        /// <summary>
-        /// 风向数字转中文：1=北风 2=东北风 3=东风 4=东南风 5=南风 6=西南风 7=西风 8=西北风
-        /// </summary>
-        private static string WindDirectionToString(int dir)
-        {
-            return dir switch
-            {
-                1 => "北风", 2 => "东北风", 3 => "东风", 4 => "东南风",
-                5 => "南风", 6 => "西南风", 7 => "西风", 8 => "西北风",
-                _ => ""
-            };
-        }
-
-        /// <summary>
-        /// 风速(m/s)转蒲福风力等级
-        /// </summary>
-        private static int WindSpeedToBeaufort(double speed)
-        {
-            if (speed < 0) return 0;
-            if (speed <= 0.2) return 0;
-            if (speed <= 1.5) return 1;
-            if (speed <= 3.3) return 2;
-            if (speed <= 5.4) return 3;
-            if (speed <= 7.9) return 4;
-            if (speed <= 10.7) return 5;
-            if (speed <= 13.8) return 6;
-            if (speed <= 17.1) return 7;
-            if (speed <= 20.7) return 8;
-            if (speed <= 24.4) return 9;
-            if (speed <= 28.4) return 10;
-            if (speed <= 32.6) return 11;
-            return 12;
-        }
-
-        /// <summary>
-        /// 格式化风向风力，如"西风1-2级"、"微风"
-        /// </summary>
-        private static string FormatWindForce(int windDirNum, double windSpeed)
-        {
-            if (windDirNum < 1 || windDirNum > 8)
-                return "微风";
-
-            string dirStr = WindDirectionToString(windDirNum);
-            int level = WindSpeedToBeaufort(windSpeed);
-
-            if (level == 0)
-                return dirStr + "微风";
-
-            int pairStart = (level % 2 == 1) ? level : level - 1;
-            if (pairStart < 1) pairStart = 1;
-            string levelStr = $"{pairStart}-{pairStart + 1}级";
-
-            return dirStr + levelStr;
-        }
-
-        /// <summary>
-        /// 从JS中提取JSON对象，用括号计数器精确定位
-        /// </summary>
-        private static string ExtractJson(string js)
+        private static string ExtractDataSK(string js)
         {
             int eqIdx = js.IndexOf("= {");
             if (eqIdx < 0) eqIdx = js.IndexOf("={");
-            if (eqIdx < 0) throw new Exception("JS格式异常，找不到= {");
+            if (eqIdx < 0) throw new Exception("JSONP格式异常");
 
             int jsonStart = js.IndexOf('{', eqIdx);
             if (jsonStart < 0) throw new Exception("找不到JSON起始{");
@@ -536,38 +356,56 @@ namespace WeatherUdpSender
             {
                 if (js[k] == '{') depth++;
                 else if (js[k] == '}') depth--;
-                if (depth == 0)
-                {
-                    jsonEnd = k;
-                    break;
-                }
+                if (depth == 0) { jsonEnd = k; break; }
             }
             if (jsonEnd < 0) throw new Exception("找不到JSON结束}");
 
             return js.Substring(jsonStart, jsonEnd - jsonStart + 1);
         }
 
-        private static double[] ReadArr(JsonElement root, string prop)
+        /// <summary>
+        /// 计算体感温度 (Heat Index / 炎热指数)
+        /// 公式来源: NOAA National Weather Service
+        /// 仅当温度>=27°C且湿度>=40%时使用Heat Index；否则返回实际温度
+        /// </summary>
+        private static double CalcFeelsLike(double tempC, double rh)
         {
-            if (!root.TryGetProperty(prop, out var e) || e.ValueKind != JsonValueKind.Array) return Array.Empty<double>();
-            var a = new double[e.GetArrayLength()];
-            for (int i = 0; i < a.Length; i++) a[i] = e[i].GetDouble();
-            return a;
+            if (tempC < -900 || rh < 0) return tempC;
+
+            // 温度低于27°C或湿度低于40%时，体感≈实际温度
+            if (tempC < 27 || rh < 40) return tempC;
+
+            double T = tempC * 9.0 / 5.0 + 32; // 转华氏度
+            double R = rh;
+
+            double HI = -42.379
+                + 2.04901523 * T
+                + 10.14333127 * R
+                - 0.22475541 * T * R
+                - 0.00683783 * T * T
+                - 0.05481717 * R * R
+                + 0.00122874 * T * T * R
+                + 0.00085282 * T * R * R
+                - 0.00000199 * T * T * R * R;
+
+            return (HI - 32) * 5.0 / 9.0; // 转回摄氏度
         }
 
-        private static string[] ReadStrArr(JsonElement root, string prop)
+        /// <summary>
+        /// 计算绝对湿度 (g/m³)
+        /// 公式: 绝对湿度 = (相对湿度/100) × 饱和水汽压 / (461.5 × (T+273.15))
+        /// 饱和水汽压 = 6.112 × exp(17.67×T/(T+243.5)) × 100 (Pa)
+        /// </summary>
+        private static double CalcAbsHumidity(double tempC, double rh)
         {
-            if (!root.TryGetProperty(prop, out var e) || e.ValueKind != JsonValueKind.Array) return Array.Empty<string>();
-            var a = new string[e.GetArrayLength()];
-            for (int i = 0; i < a.Length; i++) a[i] = e[i].GetString() ?? "";
-            return a;
-        }
+            if (tempC < -900 || rh <= 0) return -1;
 
-        private static double Val(double[] a, int i)
-        {
-            if (a == null || i < 0 || i >= a.Length) return -999.9;
-            double v = a[i];
-            return v < -900 ? -999.9 : v;
+            double T = tempC + 273.15; // 开尔文
+            double es = 6.112 * Math.Exp(17.67 * tempC / (tempC + 243.5)) * 100; // 饱和水汽压 Pa
+            double e = (rh / 100.0) * es; // 实际水汽压 Pa
+            double absHum = e / (461.5 * T) * 1000; // g/m³
+
+            return absHum;
         }
 
         private void Log(string msg)
@@ -579,15 +417,11 @@ namespace WeatherUdpSender
             { lstLog.Items.Insert(0, line); if (lstLog.Items.Count > 500) lstLog.Items.RemoveAt(lstLog.Items.Count - 1); }
         }
 
-        /// <summary>
-        /// 初始化系统托盘图标
-        /// </summary>
         private void InitTrayIcon()
         {
             _trayIcon = new NotifyIcon();
-            _trayIcon.Text = "广州景点天气UDP推送";
+            _trayIcon.Text = "多城市天气UDP推送";
 
-            // 使用嵌入资源中的图标
             try
             {
                 var assembly = System.Reflection.Assembly.GetExecutingAssembly();
@@ -597,17 +431,14 @@ namespace WeatherUdpSender
             }
             catch { }
 
-            // 如果没加载到图标，用系统默认图标
             if (_trayIcon.Icon == null)
             {
                 try { _trayIcon.Icon = System.Drawing.SystemIcons.Information; }
                 catch { }
             }
 
-            // 双击托盘图标恢复窗口
             _trayIcon.DoubleClick += (_, _) => ShowFromTray();
 
-            // 右键菜单
             var menu = new ContextMenuStrip();
             menu.Items.Add("显示主窗口", null, (_, _) => ShowFromTray());
             menu.Items.Add("-");
@@ -621,9 +452,6 @@ namespace WeatherUdpSender
             _trayIcon.ContextMenuStrip = menu;
         }
 
-        /// <summary>
-        /// 重写SetVisibleCore，启动时如果要最小化到托盘则不显示窗口
-        /// </summary>
         protected override void SetVisibleCore(bool value)
         {
             if (_startToTray && !IsHandleCreated)
@@ -634,9 +462,6 @@ namespace WeatherUdpSender
             base.SetVisibleCore(value);
         }
 
-        /// <summary>
-        /// 从托盘恢复窗口
-        /// </summary>
         private void ShowFromTray()
         {
             this.Show();
@@ -647,24 +472,20 @@ namespace WeatherUdpSender
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            // 最小化时隐藏到托盘（需检查控件是否已初始化）
             if (chkMinimizeToTray != null && chkMinimizeToTray.Checked && this.WindowState == FormWindowState.Minimized && _trayIcon != null)
             {
                 this.Hide();
                 _trayIcon.Visible = true;
-
             }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // 如果勾选了最小化到托盘且不是真正退出，则隐藏到托盘
             if (chkMinimizeToTray != null && chkMinimizeToTray.Checked && e.CloseReason == CloseReason.UserClosing && _trayIcon != null)
             {
                 e.Cancel = true;
                 this.Hide();
                 _trayIcon.Visible = true;
-
                 return;
             }
 
@@ -675,21 +496,19 @@ namespace WeatherUdpSender
         }
     }
 
-    public class SpotData
+    public class CityData
     {
         public string Name = "";
         public double Temp = -999.9;
-        public double MinT = -999.9;
-        public double MaxT = -999.9;
         public double Feels = -999.9;
-        public double Rh = -999.9;
+        public double Rh = -1;
+        public double AbsHumidity = -1;
         public string Desc = "";
-        public double Rain = -999.9;
         public string Aqi = "";
         public string UvIndex = "";
         public string UvLevel = "";
         public string WindForce = "";
-        public string Forecast = "";
+        public string Time = "";
     }
 
     public class ConfigData
