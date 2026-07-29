@@ -165,7 +165,10 @@ namespace WeatherUdpSender
             if (chkAutoStart.Checked)
             {
                 _isAutoStarting = true;
-                this.HandleCreated += (_, _) => Start();
+                if (this.IsHandleCreated)
+                    Start();
+                else
+                    this.HandleCreated += (_, _) => Start();
             }
         }
 
@@ -307,6 +310,8 @@ namespace WeatherUdpSender
             string aqi = (skDoc.RootElement.TryGetProperty("aqi", out var a) ? a.GetString() : "") ?? "";
             string aqiPm25 = (skDoc.RootElement.TryGetProperty("aqi_pm25", out var ap) ? ap.GetString() : "") ?? "";
             string time = (skDoc.RootElement.TryGetProperty("time", out var ti) ? ti.GetString() : "") ?? "";
+            if (string.IsNullOrEmpty(time))
+                time = DateTime.Now.ToString("yyyyMMddHHmm");
 
             result.Temp = temp;
             result.Rh = sd;
