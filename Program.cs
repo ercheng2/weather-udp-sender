@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -359,10 +361,10 @@ namespace WeatherUdpSender
 
             // 匹配每个预报日: <h1>日期</h1>...<p class="wea">天气</p>...<span>最高</span>/<i>最低℃</i>...<p class="win">...<i>风力</i>
             var pattern = @"<h1>(\d+日[^<]*)</h1>.*?<p title=""([^""]*)"" class=""wea"">.*?<span>(\d+)</span>/\s*<i>(\d+)℃</i>";
-            var matches = System.Text.RegularExpressions.Regex.Matches(html, pattern, System.Text.RegularExpressions.RegexOptions.Singleline);
+            var matches = Regex.Matches(html, pattern, RegexOptions.Singleline);
 
             var forecasts = new List<string>();
-            foreach (System.Text.RegularExpressions.Match m in matches)
+            foreach (Match m in matches)
             {
                 if (forecasts.Count >= 3) break;
                 string date = m.Groups[1].Value;
