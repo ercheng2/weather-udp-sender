@@ -115,11 +115,12 @@ namespace WeatherUdpSender
 
             var lblFormat = new Label
             {
-                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低;后天|...;大后天|...",
-                Left = 12, Top = y, Width = 820, Height = 18,
+                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低",
+                Left = 12, Top = y, Width = 820, Height = 32,
+                AutoSize = false,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
             };
-            y += 22;
+            y += 36;
 
             lstLog = new ListBox
             {
@@ -165,7 +166,7 @@ namespace WeatherUdpSender
             if (chkAutoStart.Checked)
             {
                 _isAutoStarting = true;
-                this.Shown += (_, _) => Start();
+                this.BeginInvoke(new Action(() => { if (_isAutoStarting) Start(); }));
             }
         }
 
@@ -359,10 +360,12 @@ namespace WeatherUdpSender
         /// </summary>
         private static string FetchForecast(string code)
         {
-            string url = $"http://www.weather.com.cn/weather/{code}.shtml";
-            string html = _http.GetStringAsync(url).GetAwaiter().GetResult();
+            using var fc = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            fc.DefaultRequestHeaders.Add("Referer", "https://www.weather.com.cn/");
+            string url = $"https://www.weather.com.cn/weather/{code}.shtml";
+            string html = fc.GetStringAsync(url).GetAwaiter().GetResult();
 
-            // 匹配每个预报日: <h1>日期</h1>...<p class="wea">天气</p>...<span>最高</span>/<i>最低℃</i>...<p class="win">...<i>风力</i>
+            // 匹配每个预报日: <h1>日期</h1>...<p class="wea">天气</p>...<span>最高</span>/<i>最低℃</i>
             var pattern = @"<h1>(\d+日[^<]*)</h1>.*?<p title=""([^""]*)"" class=""wea"">.*?<span>(\d+)</span>/\s*<i>(\d+)℃</i>";
             var matches = Regex.Matches(html, pattern, RegexOptions.Singleline);
 
