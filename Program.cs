@@ -210,9 +210,8 @@ namespace WeatherUdpSender
             _udpClient = new UdpClient();
             int intervalMin = (int)numInterval.Value;
 
-            int firstDelay = _isAutoStarting ? 3000 : 0;
             _isAutoStarting = false;
-            _timer = new System.Threading.Timer(_ => FetchAndSend(), null, firstDelay, intervalMin * 60 * 1000);
+            _timer = new System.Threading.Timer(_ => FetchAndSend(), null, 0, intervalMin * 60 * 1000);
 
             SaveConfig();
         }
