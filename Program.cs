@@ -166,7 +166,6 @@ namespace WeatherUdpSender
             if (chkAutoStart.Checked)
             {
                 _isAutoStarting = true;
-                this.BeginInvoke(new Action(() => { if (_isAutoStarting) Start(); }));
             }
         }
 
@@ -523,6 +522,15 @@ namespace WeatherUdpSender
                 Application.Exit();
             });
             _trayIcon.ContextMenuStrip = menu;
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            if (_isAutoStarting)
+            {
+                Start();
+            }
         }
 
         protected override void SetVisibleCore(bool value)
