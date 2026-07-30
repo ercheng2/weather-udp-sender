@@ -372,6 +372,9 @@ namespace WeatherUdpSender
             string wcity = cityName switch
             {
                 "达茂旗" => "达尔罕茂明安联合旗",
+                "白云鄂博国家矿山公园" => "白云鄂博",
+                "春坤山生态旅游区" => "固阳",
+                "包头博物馆" => "包头",
                 _ => cityName
             };
 
