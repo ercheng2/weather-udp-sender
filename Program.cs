@@ -86,7 +86,7 @@ namespace WeatherUdpSender
 
             var lblInfo = new Label
             {
-                Text = $"8城市实时天气 | UDP推送 | 数据源：weather.com.cn | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川",
+                Text = $"8城市实时天气 | UDP推送 | 实时:weather.com.cn 预报:wttr.in | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
@@ -321,7 +321,7 @@ namespace WeatherUdpSender
             // 5. 获取三天预报
             try
             {
-                result.Forecast = FetchForecast(code);
+                result.Forecast = FetchForecast(name);
             }
             catch (Exception ex)
             {
@@ -355,34 +355,57 @@ namespace WeatherUdpSender
         }
 
         /// <summary>
-        /// 从 weather.com.cn 7天预报页面提取未来三天预报
+        /// 从 wttr.in 获取未来三天预报
         /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
         /// </summary>
-        private static string FetchForecast(string code)
+        private static readonly Dictionary<int, string> WttrCode = new()
         {
+            {113, "晴"}, {116, "多云"}, {119, "阴"}, {122, "阴"},
+            {143, "雾"}, {176, "阵雨"}, {179, "雨夹雪"}, {182, "雨夹雪"},
+            {185, "冻雨"}, {200, "雷阵雨"}, {227, "暴雪"}, {230, "暴雪"},
+            {248, "雾"}, {260, "雾"},
+            {263, "小雨"}, {266, "小雨"}, {293, "小雨"}, {296, "小雨"},
+            {299, "中雨"}, {302, "中雨"}, {305, "大雨"}, {308, "大雨"},
+            {311, "冻雨"}, {314, "冻雨"}, {317, "雨夹雪"}, {320, "雨夹雪"},
+            {323, "小雪"}, {326, "小雪"}, {329, "中雪"}, {332, "中雪"},
+            {335, "大雪"}, {338, "大雪"}, {350, "冰雹"},
+            {353, "阵雨"}, {356, "中雨"}, {359, "大雨"},
+            {362, "雨夹雪"}, {365, "雨夹雪"}, {368, "小雪"}, {371, "大雪"},
+            {374, "冰雹"}, {377, "冰雹"}, {386, "雷阵雨"}, {389, "雷阵雨"},
+            {392, "雷阵雨"}, {395, "大雪"},
+        };
+
+        private static string FetchForecast(string cityName)
+        {
+            // wttr.in 对部分城市名需要特殊处理
+            string wcity = cityName switch
+            {
+                "达茂旗" => "达尔罕茂明安联合旗",
+                _ => cityName
+            };
+
             using var fc = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            fc.DefaultRequestHeaders.Add("Referer", "https://www.weather.com.cn/");
-            string url = $"https://www.weather.com.cn/weather/{code}.shtml";
-            string html = fc.GetStringAsync(url).GetAwaiter().GetResult();
+            string url = $"https://wttr.in/{Uri.EscapeDataString(wcity)}?format=j1";
+            string json = fc.GetStringAsync(url).GetAwaiter().GetResult();
+            using var doc = JsonDocument.Parse(json);
 
-            // 匹配每个预报日: <h1>日期</h1>...<p class="wea">天气</p>...<span>最高</span>/<i>最低℃</i>
-            var pattern = @"<h1>(\d+日[^<]*)</h1>.*?<p title=""([^""]*)"" class=""wea"">.*?<span>(\d+)</span>/\s*<i>(\d+)℃</i>";
-            var matches = Regex.Matches(html, pattern, RegexOptions.Singleline);
-
+            var days = doc.RootElement.GetProperty("weather");
             var forecasts = new List<string>();
-            foreach (Match m in matches)
+            string[] labels = { "明天", "后天", "大后天" };
+            int idx = 0;
+
+            foreach (var day in days.EnumerateArray())
             {
                 if (forecasts.Count >= 3) break;
-                string date = m.Groups[1].Value;
-                string weather = m.Groups[2].Value;
-                string high = m.Groups[3].Value;
-                string low = m.Groups[4].Value;
+                if (idx == 0) { idx++; continue; } // 跳过今天
 
-                // 跳过"今天"
-                if (date.Contains("今天")) continue;
+                int maxTemp = (int)Math.Round(day.GetProperty("maxtempC").GetDouble());
+                int minTemp = (int)Math.Round(day.GetProperty("mintempC").GetDouble());
+                int code = day.GetProperty("hourly")[0].GetProperty("weatherCode").GetInt32();
+                string desc = WttrCode.TryGetValue(code, out var d) ? d : "未知";
 
-                string label = forecasts.Count == 0 ? "明天" : (forecasts.Count == 1 ? "后天" : "大后天");
-                forecasts.Add($"{label}|{weather}|{high}|{low}");
+                forecasts.Add($"{labels[forecasts.Count]}|{desc}|{maxTemp}|{minTemp}");
+                idx++;
             }
 
             return string.Join(";", forecasts);
