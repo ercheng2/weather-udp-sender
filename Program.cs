@@ -92,7 +92,7 @@ namespace WeatherUdpSender
 
             var lblInfo = new Label
             {
-                Text = $"14城市实时天气 | UDP推送 | 实时:weather.com.cn 预报:wttr.in | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川 赛汗塔拉 南海湿地 包头博物馆 希拉穆仁 春坤山 白云鄂博",
+                Text = $"14城市实时天气 | UDP推送 | 数据源:weather.com.cn | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川 赛汗塔拉 南海湿地 包头博物馆 希拉穆仁 春坤山 白云鄂博",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
@@ -298,7 +298,7 @@ namespace WeatherUdpSender
 
         /// <summary>
         /// 获取单个城市的天气数据
-        /// 数据源: d1.weather.com.cn/sk_2d/ (实时+AQI) + m.weather.com.cn/data/ (紫外线)
+        /// 数据源: d1.weather.com.cn/sk_2d/ (实时+AQI) + wap_40d/ (预报) + weather_index/ (紫外线)
         /// </summary>
         private CityData FetchCityWeather(string name, string code)
         {
@@ -328,18 +328,29 @@ namespace WeatherUdpSender
             result.Time = time;
             result.Aqi = !string.IsNullOrEmpty(aqi) ? $"{aqi}" : (!string.IsNullOrEmpty(aqiPm25) ? $"PM2.5:{aqiPm25}" : "--");
 
-            // 5. 获取三天预报 + 紫外线
+            // 5. 获取三天预报（国内源: wap_40d）
             try
             {
-                var (forecast, uv) = FetchWttrData(name);
-                result.Forecast = forecast;
-                result.UvIndex = uv;
-                result.UvLevel = uv;
+                result.Forecast = FetchForecast(code);
             }
             catch (Exception ex)
             {
                 Log($"  ⚠ {name} 预报获取失败: {ex.Message}");
                 result.Forecast = "";
+            }
+
+            // 6. 获取紫外线指数（国内源: weather_index）
+            try
+            {
+                var uv = FetchUvIndex(code);
+                result.UvIndex = uv;
+                result.UvLevel = uv;
+            }
+            catch (Exception ex)
+            {
+                Log($"  ⚠ {name} 紫外线获取失败: {ex.Message}");
+                result.UvIndex = "--";
+                result.UvLevel = "--";
             }
 
             // 2. 计算体感温度 (Heat Index)
@@ -352,72 +363,84 @@ namespace WeatherUdpSender
         }
 
         /// <summary>
-        /// 从 wttr.in 获取未来三天预报
-        /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
+        /// 天气代码映射（QX/T 740-2024 标准）
         /// </summary>
-        private static readonly Dictionary<int, string> WttrCode = new()
+        private static readonly Dictionary<string, string> WeatherCode = new()
         {
-            {113, "晴"}, {116, "多云"}, {119, "阴"}, {122, "阴"},
-            {143, "雾"}, {176, "阵雨"}, {179, "雨夹雪"}, {182, "雨夹雪"},
-            {185, "冻雨"}, {200, "雷阵雨"}, {227, "暴雪"}, {230, "暴雪"},
-            {248, "雾"}, {260, "雾"},
-            {263, "小雨"}, {266, "小雨"}, {293, "小雨"}, {296, "小雨"},
-            {299, "中雨"}, {302, "中雨"}, {305, "大雨"}, {308, "大雨"},
-            {311, "冻雨"}, {314, "冻雨"}, {317, "雨夹雪"}, {320, "雨夹雪"},
-            {323, "小雪"}, {326, "小雪"}, {329, "中雪"}, {332, "中雪"},
-            {335, "大雪"}, {338, "大雪"}, {350, "冰雹"},
-            {353, "阵雨"}, {356, "中雨"}, {359, "大雨"},
-            {362, "雨夹雪"}, {365, "雨夹雪"}, {368, "小雪"}, {371, "大雪"},
-            {374, "冰雹"}, {377, "冰雹"}, {386, "雷阵雨"}, {389, "雷阵雨"},
-            {392, "雷阵雨"}, {395, "大雪"},
+            ["00"] = "晴", ["01"] = "多云", ["02"] = "阴", ["03"] = "阵雨", ["04"] = "雷阵雨",
+            ["05"] = "雷阵雨伴冰雹", ["06"] = "雨夹雪", ["07"] = "小雨", ["08"] = "中雨", ["09"] = "大雨",
+            ["10"] = "暴雨", ["11"] = "大暴雨", ["12"] = "特大暴雨", ["13"] = "阵雪", ["14"] = "小雪",
+            ["15"] = "中雪", ["16"] = "大雪", ["17"] = "暴雪", ["18"] = "雾", ["19"] = "冻雨",
+            ["20"] = "沙尘暴", ["21"] = "小到中雨", ["22"] = "中到大雨", ["23"] = "大到暴雨",
+            ["24"] = "暴雨到大暴雨", ["25"] = "大暴雨到特大暴雨", ["26"] = "小到中雪", ["27"] = "中到大雪",
+            ["28"] = "大到暴雪", ["29"] = "浮尘", ["30"] = "扬沙", ["31"] = "强沙尘暴",
+            ["53"] = "霾", ["301"] = "雨", ["302"] = "雪",
         };
 
-        private static (string Forecast, string UvIndex) FetchWttrData(string cityName)
+        /// <summary>
+        /// 从 d1.weather.com.cn/wap_40d/ 获取未来三天预报（国内源）
+        /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
+        /// </summary>
+        private static string FetchForecast(string code)
         {
-            // wttr.in 对部分城市名需要特殊处理
-            string wcity = cityName switch
-            {
-                "达茂旗" => "达尔罕茂明安联合旗",
-                "白云鄂博国家矿山公园" => "白云鄂博",
-                "春坤山生态旅游区" => "固阳",
-                "包头博物馆" => "包头",
-                _ => cityName
-            };
+            string url = $"http://d1.weather.com.cn/wap_40d/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
+            string json = ExtractJsonArray(js);
 
-            using var fc = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            string url = $"https://wttr.in/{Uri.EscapeDataString(wcity)}?format=j1";
-            string json = fc.GetStringAsync(url).GetAwaiter().GetResult();
             using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
 
-            // 紫外线指数
-            string uvIndex = "--";
-            try
-            {
-                var cc = doc.RootElement.GetProperty("current_condition")[0];
-                uvIndex = cc.TryGetProperty("uvIndex", out var uv) ? uv.GetString() ?? "--" : "--";
-            }
-            catch { }
-
-            var days = doc.RootElement.GetProperty("weather");
+            string todayDate = DateTime.Now.ToString("yyyyMMdd");
             var forecasts = new List<string>();
             string[] labels = { "明天", "后天", "大后天" };
-            int idx = 0;
 
-            foreach (var day in days.EnumerateArray())
+            foreach (var day in root.EnumerateArray())
             {
                 if (forecasts.Count >= 3) break;
-                if (idx == 0) { idx++; continue; } // 跳过今天
 
-                int maxTemp = (int)Math.Round(double.Parse(day.GetProperty("maxtempC").GetString()!));
-                int minTemp = (int)Math.Round(double.Parse(day.GetProperty("mintempC").GetString()!));
-                int code = int.Parse(day.GetProperty("hourly")[0].GetProperty("weatherCode").GetString()!);
-                string desc = WttrCode.TryGetValue(code, out var d) ? d : "未知";
+                string date = day.TryGetProperty("009", out var d) ? d.GetString() ?? "" : "";
+                if (string.Compare(date, todayDate) <= 0) continue;
 
-                forecasts.Add($"{labels[forecasts.Count]}|{desc}|{maxTemp}|{minTemp}");
-                idx++;
+                // 白天天气优先，如果白天天气为空则用夜间天气
+                string dayCode = day.TryGetProperty("001", out var c1) ? c1.GetString() ?? "" : "";
+                string nightCode = day.TryGetProperty("002", out var c2) ? c2.GetString() ?? "" : "";
+                string desc = WeatherCode.TryGetValue(dayCode, out var wd) ? wd
+                           : WeatherCode.TryGetValue(nightCode, out var wn) ? wn : dayCode;
+
+                string high = day.TryGetProperty("003", out var h) ? h.GetString() ?? "" : "";
+                string low = day.TryGetProperty("004", out var l) ? l.GetString() ?? "" : "";
+
+                forecasts.Add($"{labels[forecasts.Count]}|{desc}|{high}|{low}");
             }
 
-            return (string.Join(";", forecasts), uvIndex);
+            return string.Join(";", forecasts);
+        }
+
+        /// <summary>
+        /// 从 d1.weather.com.cn/weather_index/ 获取紫外线指数（国内源）
+        /// </summary>
+        private static string FetchUvIndex(string code)
+        {
+            string url = $"http://d1.weather.com.cn/weather_index/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
+
+            // 从 dataZS 中提取 uv_hint
+            var match = Regex.Match(js, @"""uv_hint"":""([^""]+)""");
+            if (match.Success)
+                return match.Groups[1].Value;
+
+            return "--";
+        }
+
+        /// <summary>
+        /// 从 JSONP 响应中提取 JSON 数组（格式: var fc40=[...];）
+        /// </summary>
+        private static string ExtractJsonArray(string js)
+        {
+            int start = js.IndexOf('[');
+            int end = js.LastIndexOf(']');
+            if (start < 0 || end < 0 || end <= start) throw new Exception("JSON数组格式异常");
+            return js.Substring(start, end - start + 1);
         }
 
         /// <summary>
