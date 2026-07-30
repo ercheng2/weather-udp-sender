@@ -438,8 +438,10 @@ namespace WeatherUdpSender
         private static string ExtractJsonArray(string js)
         {
             int start = js.IndexOf('[');
-            int end = js.LastIndexOf(']');
-            if (start < 0 || end < 0 || end <= start) throw new Exception("JSON数组格式异常");
+            if (start < 0) throw new Exception("JSON数组格式异常");
+            // 找到第一个 ]; 作为数组结束（LastIndexOf 会误匹配后面 cwx 等数据里的 ]）
+            int end = js.IndexOf("];", start);
+            if (end < 0) throw new Exception("JSON数组格式异常");
             return js.Substring(start, end - start + 1);
         }
 
