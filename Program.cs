@@ -316,10 +316,13 @@ namespace WeatherUdpSender
             result.Time = time;
             result.Aqi = !string.IsNullOrEmpty(aqi) ? $"{aqi}" : (!string.IsNullOrEmpty(aqiPm25) ? $"PM2.5:{aqiPm25}" : "--");
 
-            // 5. 获取三天预报
+            // 5. 获取三天预报 + 紫外线
             try
             {
-                result.Forecast = FetchForecast(name);
+                var (forecast, uv) = FetchWttrData(name);
+                result.Forecast = forecast;
+                result.UvIndex = uv;
+                result.UvLevel = uv;
             }
             catch (Exception ex)
             {
@@ -332,22 +335,6 @@ namespace WeatherUdpSender
 
             // 3. 计算绝对湿度 (g/m³)
             result.AbsHumidity = CalcAbsHumidity(temp, sd);
-
-            // 4. 获取紫外线指数
-            try
-            {
-                string uvUrl = $"http://m.weather.com.cn/data/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-                string uvJson = _http.GetStringAsync(uvUrl).GetAwaiter().GetResult();
-                using var uvDoc = JsonDocument.Parse(uvJson);
-                var wi = uvDoc.RootElement.GetProperty("weatherinfo");
-                result.UvIndex = wi.TryGetProperty("index_uv", out var uv) ? uv.GetString() ?? "--" : "--";
-                result.UvLevel = result.UvIndex; // weather.com.cn的index_uv直接是"中等""很强"等中文描述
-            }
-            catch
-            {
-                result.UvIndex = "--";
-                result.UvLevel = "--";
-            }
 
             return result;
         }
@@ -373,7 +360,7 @@ namespace WeatherUdpSender
             {392, "雷阵雨"}, {395, "大雪"},
         };
 
-        private static string FetchForecast(string cityName)
+        private static (string Forecast, string UvIndex) FetchWttrData(string cityName)
         {
             // wttr.in 对部分城市名需要特殊处理
             string wcity = cityName switch
@@ -386,6 +373,15 @@ namespace WeatherUdpSender
             string url = $"https://wttr.in/{Uri.EscapeDataString(wcity)}?format=j1";
             string json = fc.GetStringAsync(url).GetAwaiter().GetResult();
             using var doc = JsonDocument.Parse(json);
+
+            // 紫外线指数
+            string uvIndex = "--";
+            try
+            {
+                var cc = doc.RootElement.GetProperty("current_condition")[0];
+                uvIndex = cc.TryGetProperty("uvIndex", out var uv) ? uv.GetString() ?? "--" : "--";
+            }
+            catch { }
 
             var days = doc.RootElement.GetProperty("weather");
             var forecasts = new List<string>();
@@ -406,7 +402,7 @@ namespace WeatherUdpSender
                 idx++;
             }
 
-            return string.Join(";", forecasts);
+            return (string.Join(";", forecasts), uvIndex);
         }
 
         /// <summary>
