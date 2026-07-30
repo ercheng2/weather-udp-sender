@@ -397,9 +397,9 @@ namespace WeatherUdpSender
                 if (forecasts.Count >= 3) break;
                 if (idx == 0) { idx++; continue; } // 跳过今天
 
-                int maxTemp = (int)Math.Round(day.GetProperty("maxtempC").GetDouble());
-                int minTemp = (int)Math.Round(day.GetProperty("mintempC").GetDouble());
-                int code = day.GetProperty("hourly")[0].GetProperty("weatherCode").GetInt32();
+                int maxTemp = (int)Math.Round(double.Parse(day.GetProperty("maxtempC").GetString()!));
+                int minTemp = (int)Math.Round(double.Parse(day.GetProperty("mintempC").GetString()!));
+                int code = int.Parse(day.GetProperty("hourly")[0].GetProperty("weatherCode").GetString()!);
                 string desc = WttrCode.TryGetValue(code, out var d) ? d : "未知";
 
                 forecasts.Add($"{labels[forecasts.Count]}|{desc}|{maxTemp}|{minTemp}");
