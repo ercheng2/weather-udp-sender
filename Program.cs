@@ -226,7 +226,8 @@ namespace WeatherUdpSender
             _running = false;
             _timer?.Dispose(); _timer = null;
             _retryTimer?.Dispose(); _retryTimer = null;
-            _udpClient?.Close(); _udpClient = null;
+            try { _udpClient?.Close(); } catch { }
+            _udpClient = null;
             btnStart.Text = "启动";
             lblStatus.Text = "状态：已停止";
             lblStatus.ForeColor = System.Drawing.Color.Gray;
@@ -240,12 +241,14 @@ namespace WeatherUdpSender
             int ok = 0, fail = 0;
             try
             {
+                if (this.IsDisposed) return;
                 string ip = this.Invoke(() => txtIp.Text.Trim());
                 int port = int.Parse(this.Invoke(() => txtPort.Text.Trim()));
                 var endpoint = new IPEndPoint(IPAddress.Parse(ip), port);
 
                 for (int i = 0; i < Cities.Length; i++)
                 {
+                    if (!_running && !singleShot) break;
                     var (name, code) = Cities[i];
                     try
                     {
@@ -254,8 +257,11 @@ namespace WeatherUdpSender
                         string absHum = w.AbsHumidity > 0 ? $"{w.AbsHumidity:F1}g/m³" : "--";
                         string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
-                        _udpClient!.Send(bytes, bytes.Length, endpoint);
-                        _sendCount++;
+                        if (_udpClient != null)
+                        {
+                            _udpClient.Send(bytes, bytes.Length, endpoint);
+                            _sendCount++;
+                        }
                         ok++;
                         string fc = string.IsNullOrEmpty(w.Forecast) ? "" : $" | 预报:{w.Forecast}";
                         Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
@@ -277,7 +283,7 @@ namespace WeatherUdpSender
             }
             finally
             {
-                if (singleShot) { _udpClient?.Close(); _udpClient = null; }
+                if (singleShot) { try { _udpClient?.Close(); } catch { } _udpClient = null; }
             }
 
             if (_running && ok == 0 && fail > 0 && _fetchRetryCount < MAX_RETRIES)
@@ -378,7 +384,7 @@ namespace WeatherUdpSender
                 _ => cityName
             };
 
-            using var fc = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var fc = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             string url = $"https://wttr.in/{Uri.EscapeDataString(wcity)}?format=j1";
             string json = fc.GetStringAsync(url).GetAwaiter().GetResult();
             using var doc = JsonDocument.Parse(json);
@@ -487,9 +493,10 @@ namespace WeatherUdpSender
 
         private void Log(string msg)
         {
+            if (lstLog.IsDisposed || !lstLog.IsHandleCreated) return;
             string line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
             if (lstLog.InvokeRequired)
-                lstLog.Invoke(new Action(() => { lstLog.Items.Insert(0, line); if (lstLog.Items.Count > 500) lstLog.Items.RemoveAt(lstLog.Items.Count - 1); }));
+                lstLog.Invoke(new Action(() => { if (!lstLog.IsDisposed) { lstLog.Items.Insert(0, line); if (lstLog.Items.Count > 500) lstLog.Items.RemoveAt(lstLog.Items.Count - 1); } }));
             else
             { lstLog.Items.Insert(0, line); if (lstLog.Items.Count > 500) lstLog.Items.RemoveAt(lstLog.Items.Count - 1); }
         }
