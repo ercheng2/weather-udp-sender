@@ -257,7 +257,9 @@ namespace WeatherUdpSender
                         var w = FetchCityWeather(name, code);
                         // 绝对湿度 g/m³
                         string absHum = w.AbsHumidity > 0 ? $"{w.AbsHumidity:F1}g/m³" : "--";
-                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},感冒{w.ColdIndex},过敏{w.AllergyIndex},穿衣{w.DressIndex},洗车{w.WashCarIndex},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
+                        string todayHL = (!string.IsNullOrEmpty(w.TodayHigh) && !string.IsNullOrEmpty(w.TodayLow))
+                            ? $"今日{w.TodayHigh}/{w.TodayLow}°C" : "";
+                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},{todayHL},感冒{w.ColdIndex},过敏{w.AllergyIndex},穿衣{w.DressIndex},洗车{w.WashCarIndex},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         if (_udpClient != null)
                         {
@@ -266,7 +268,7 @@ namespace WeatherUdpSender
                         }
                         ok++;
                         string fc = string.IsNullOrEmpty(w.Forecast) ? "" : $" | 预报:{w.Forecast}";
-                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 感冒{w.ColdIndex} 过敏{w.AllergyIndex} 穿衣{w.DressIndex} 洗车{w.WashCarIndex} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
+                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} {todayHL} 感冒{w.ColdIndex} 过敏{w.AllergyIndex} 穿衣{w.DressIndex} 洗车{w.WashCarIndex} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
                     }
                     catch (Exception ex)
                     {
@@ -333,7 +335,10 @@ namespace WeatherUdpSender
             // 5. 获取七天预报（国内源: wap_40d）
             try
             {
-                result.Forecast = FetchForecast(code);
+                var (forecast, todayHigh, todayLow) = FetchForecast(code);
+                result.Forecast = forecast;
+                result.TodayHigh = todayHigh;
+                result.TodayLow = todayLow;
             }
             catch (Exception ex)
             {
@@ -398,7 +403,7 @@ namespace WeatherUdpSender
         /// 从 d1.weather.com.cn/wap_40d/ 获取未来七天预报（国内源）
         /// 格式: 明天|天气|最高|最低|风向风力;后天|天气|最高|最低|风向风力;...;第7天|天气|最高|最低|风向风力
         /// </summary>
-        private static string FetchForecast(string code)
+        private static (string forecast, string todayHigh, string todayLow) FetchForecast(string code)
         {
             string url = $"http://d1.weather.com.cn/wap_40d/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
             string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
@@ -410,13 +415,22 @@ namespace WeatherUdpSender
             string todayDate = DateTime.Now.ToString("yyyyMMdd");
             var forecasts = new List<string>();
             string[] labels = { "明天", "后天", "大后天", "第4天", "第5天", "第6天", "第7天" };
+            string todayHigh = "", todayLow = "";
 
             foreach (var day in root.EnumerateArray())
             {
-                if (forecasts.Count >= 7) break;
-
                 string date = day.TryGetProperty("009", out var d) ? d.GetString() ?? "" : "";
-                if (string.Compare(date, todayDate) <= 0) continue;
+
+                // 今天的数据：提取最高最低
+                if (string.Compare(date, todayDate) == 0)
+                {
+                    todayHigh = day.TryGetProperty("003", out var th) ? th.GetString() ?? "" : "";
+                    todayLow = day.TryGetProperty("004", out var tl) ? tl.GetString() ?? "" : "";
+                    continue;
+                }
+
+                if (forecasts.Count >= 7) break;
+                if (string.Compare(date, todayDate) < 0) continue;
 
                 // 白天天气优先，如果白天天气为空则用夜间天气
                 string dayCode = day.TryGetProperty("001", out var c1) ? c1.GetString() ?? "" : "";
@@ -441,7 +455,7 @@ namespace WeatherUdpSender
                 forecasts.Add($"{labels[forecasts.Count]}|{desc}|{high}|{low}|{windStr}");
             }
 
-            return string.Join(";", forecasts);
+            return (string.Join(";", forecasts), todayHigh, todayLow);
         }
 
         /// <summary>
@@ -664,6 +678,8 @@ namespace WeatherUdpSender
         public string WindForce = "";
         public string Time = "";
         public string Forecast = ""; // 七天预报
+        public string TodayHigh = "";  // 今天最高
+        public string TodayLow = "";   // 今天最低
         public string ColdIndex = "";   // 感冒指数
         public string AllergyIndex = ""; // 过敏指数
         public string DressIndex = "";   // 穿衣指数
