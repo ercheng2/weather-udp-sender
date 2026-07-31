@@ -123,7 +123,7 @@ namespace WeatherUdpSender
 
             var lblFormat = new Label
             {
-                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,感冒XX,过敏XX,穿衣XX,洗车XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低;后天|天气|最高|最低;...;第7天|天气|最高|最低",
+                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,感冒XX,过敏XX,穿衣XX,洗车XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低|风向风力;...;第7天|天气|最高|最低|风向风力",
                 Left = 12, Top = y, Width = 820, Height = 32,
                 AutoSize = false,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
@@ -387,9 +387,16 @@ namespace WeatherUdpSender
             ["53"] = "霾", ["301"] = "雨", ["302"] = "雪",
         };
 
+        private static readonly Dictionary<string, string> WindDir = new()
+        {
+            ["0"] = "无持续风向", ["1"] = "东北风", ["2"] = "东风", ["3"] = "东南风",
+            ["4"] = "南风", ["5"] = "西南风", ["6"] = "西风", ["7"] = "西北风",
+            ["8"] = "北风", ["9"] = "旋转风",
+        };
+
         /// <summary>
         /// 从 d1.weather.com.cn/wap_40d/ 获取未来七天预报（国内源）
-        /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;...;第7天|天气|最高|最低
+        /// 格式: 明天|天气|最高|最低|风向风力;后天|天气|最高|最低|风向风力;...;第7天|天气|最高|最低|风向风力
         /// </summary>
         private static string FetchForecast(string code)
         {
@@ -420,7 +427,18 @@ namespace WeatherUdpSender
                 string high = day.TryGetProperty("003", out var h) ? h.GetString() ?? "" : "";
                 string low = day.TryGetProperty("004", out var l) ? l.GetString() ?? "" : "";
 
-                forecasts.Add($"{labels[forecasts.Count]}|{desc}|{high}|{low}");
+                // 白天风向风力优先，无则用夜间
+                string dirCode = day.TryGetProperty("005", out var dc) ? dc.GetString() ?? "" : "";
+                string force = day.TryGetProperty("007", out var f) ? f.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(dirCode) || dirCode == "0")
+                {
+                    dirCode = day.TryGetProperty("006", out var dc2) ? dc2.GetString() ?? "" : "";
+                    force = day.TryGetProperty("008", out var f2) ? f2.GetString() ?? "" : "";
+                }
+                string wind = WindDir.TryGetValue(dirCode, out var wdir) ? wdir : dirCode;
+                string windStr = $"{wind}{force}级";
+
+                forecasts.Add($"{labels[forecasts.Count]}|{desc}|{high}|{low}|{windStr}");
             }
 
             return string.Join(";", forecasts);
