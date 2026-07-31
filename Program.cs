@@ -14,7 +14,7 @@ namespace WeatherUdpSender
 {
     public class MainForm : Form
     {
-        // 8个城市：名称、weather.com.cn城市代码
+        // 16个城市：名称、weather.com.cn城市代码
         private static readonly (string Name, string Code)[] Cities = new[]
         {
             ("固阳",       "101080205"),
@@ -25,6 +25,8 @@ namespace WeatherUdpSender
             ("鄂尔多斯",   "101080701"),
             ("呼和浩特",   "101080101"),
             ("银川",       "101170101"),
+            ("张家口",     "101090301"),
+            ("乌兰察布",   "101080401"),
             ("赛汗塔拉城中草原", "101080201"),
             ("南海湿地景区",     "101080201"),
             ("包头博物馆",       "101080201"),
@@ -92,7 +94,7 @@ namespace WeatherUdpSender
 
             var lblInfo = new Label
             {
-                Text = $"14城市实时天气 | UDP推送 | 数据源:weather.com.cn | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川 赛汗塔拉 南海湿地 包头博物馆 希拉穆仁 春坤山 白云鄂博",
+                Text = $"16城市实时天气 | UDP推送 | 数据源:weather.com.cn | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川 张家口 乌兰察布 赛汗塔拉 南海湿地 包头博物馆 希拉穆仁 春坤山 白云鄂博",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
@@ -121,7 +123,7 @@ namespace WeatherUdpSender
 
             var lblFormat = new Label
             {
-                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低",
+                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,感冒XX,过敏XX,穿衣XX,洗车XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低;后天|天气|最高|最低;...;第7天|天气|最高|最低",
                 Left = 12, Top = y, Width = 820, Height = 32,
                 AutoSize = false,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
@@ -255,7 +257,7 @@ namespace WeatherUdpSender
                         var w = FetchCityWeather(name, code);
                         // 绝对湿度 g/m³
                         string absHum = w.AbsHumidity > 0 ? $"{w.AbsHumidity:F1}g/m³" : "--";
-                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
+                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},感冒{w.ColdIndex},过敏{w.AllergyIndex},穿衣{w.DressIndex},洗车{w.WashCarIndex},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         if (_udpClient != null)
                         {
@@ -264,7 +266,7 @@ namespace WeatherUdpSender
                         }
                         ok++;
                         string fc = string.IsNullOrEmpty(w.Forecast) ? "" : $" | 预报:{w.Forecast}";
-                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
+                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} 感冒{w.ColdIndex} 过敏{w.AllergyIndex} 穿衣{w.DressIndex} 洗车{w.WashCarIndex} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
                     }
                     catch (Exception ex)
                     {
@@ -328,7 +330,7 @@ namespace WeatherUdpSender
             result.Time = time;
             result.Aqi = !string.IsNullOrEmpty(aqi) ? $"{aqi}" : (!string.IsNullOrEmpty(aqiPm25) ? $"PM2.5:{aqiPm25}" : "--");
 
-            // 5. 获取三天预报（国内源: wap_40d）
+            // 5. 获取七天预报（国内源: wap_40d）
             try
             {
                 result.Forecast = FetchForecast(code);
@@ -339,18 +341,26 @@ namespace WeatherUdpSender
                 result.Forecast = "";
             }
 
-            // 6. 获取紫外线指数（国内源: weather_index）
+            // 6. 获取生活指数（国内源: weather_index）
             try
             {
-                var uv = FetchUvIndex(code);
+                var (uv, cold, allergy, dress, washcar) = FetchLifeIndex(code);
                 result.UvIndex = uv;
                 result.UvLevel = uv;
+                result.ColdIndex = cold;
+                result.AllergyIndex = allergy;
+                result.DressIndex = dress;
+                result.WashCarIndex = washcar;
             }
             catch (Exception ex)
             {
-                Log($"  ⚠ {name} 紫外线获取失败: {ex.Message}");
+                Log($"  ⚠ {name} 生活指数获取失败: {ex.Message}");
                 result.UvIndex = "--";
                 result.UvLevel = "--";
+                result.ColdIndex = "--";
+                result.AllergyIndex = "--";
+                result.DressIndex = "--";
+                result.WashCarIndex = "--";
             }
 
             // 2. 计算体感温度 (Heat Index)
@@ -378,8 +388,8 @@ namespace WeatherUdpSender
         };
 
         /// <summary>
-        /// 从 d1.weather.com.cn/wap_40d/ 获取未来三天预报（国内源）
-        /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
+        /// 从 d1.weather.com.cn/wap_40d/ 获取未来七天预报（国内源）
+        /// 格式: 明天|天气|最高|最低;后天|天气|最高|最低;...;第7天|天气|最高|最低
         /// </summary>
         private static string FetchForecast(string code)
         {
@@ -392,11 +402,11 @@ namespace WeatherUdpSender
 
             string todayDate = DateTime.Now.ToString("yyyyMMdd");
             var forecasts = new List<string>();
-            string[] labels = { "明天", "后天", "大后天" };
+            string[] labels = { "明天", "后天", "大后天", "第4天", "第5天", "第6天", "第7天" };
 
             foreach (var day in root.EnumerateArray())
             {
-                if (forecasts.Count >= 3) break;
+                if (forecasts.Count >= 7) break;
 
                 string date = day.TryGetProperty("009", out var d) ? d.GetString() ?? "" : "";
                 if (string.Compare(date, todayDate) <= 0) continue;
@@ -417,19 +427,27 @@ namespace WeatherUdpSender
         }
 
         /// <summary>
-        /// 从 d1.weather.com.cn/weather_index/ 获取紫外线指数（国内源）
+        /// 从 d1.weather.com.cn/weather_index/ 获取生活指数（国内源）
+        /// 返回: uv_hint, gm_hint, ag_hint, ct_hint, xc_hint
         /// </summary>
-        private static string FetchUvIndex(string code)
+        private static (string uv, string cold, string allergy, string dress, string washcar) FetchLifeIndex(string code)
         {
             string url = $"http://d1.weather.com.cn/weather_index/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
             string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
 
-            // 从 dataZS 中提取 uv_hint
-            var match = Regex.Match(js, @"""uv_hint"":""([^""]+)""");
-            if (match.Success)
-                return match.Groups[1].Value;
+            string uv = ExtractHint(js, "uv_hint");
+            string cold = ExtractHint(js, "gm_hint");
+            string allergy = ExtractHint(js, "ag_hint");
+            string dress = ExtractHint(js, "ct_hint");
+            string washcar = ExtractHint(js, "xc_hint");
 
-            return "--";
+            return (uv, cold, allergy, dress, washcar);
+        }
+
+        private static string ExtractHint(string js, string key)
+        {
+            var match = Regex.Match(js, $@"""{key}"":""([^""]+)""");
+            return match.Success ? match.Groups[1].Value : "--";
         }
 
         /// <summary>
@@ -627,7 +645,11 @@ namespace WeatherUdpSender
         public string UvLevel = "";
         public string WindForce = "";
         public string Time = "";
-        public string Forecast = ""; // 三天预报: 明天|天气|最高|最低;后天|天气|最高|最低;大后天|天气|最高|最低
+        public string Forecast = ""; // 七天预报
+        public string ColdIndex = "";   // 感冒指数
+        public string AllergyIndex = ""; // 过敏指数
+        public string DressIndex = "";   // 穿衣指数
+        public string WashCarIndex = ""; // 洗车指数
     }
 
     public class ConfigData
