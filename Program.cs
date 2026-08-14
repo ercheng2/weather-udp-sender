@@ -17,22 +17,20 @@ namespace WeatherUdpSender
         // 16个城市：名称、weather.com.cn城市代码
         private static readonly (string Name, string Code)[] Cities = new[]
         {
-            ("固阳",       "101080205"),
-            ("东胜",       "101080713"),
-            ("达拉特旗",   "101080703"),
+            ("长沙",       "101250101"),
+            ("武汉",       "101200101"),
+            ("郑州",       "101180101"),
+            ("石家庄",     "101090101"),
             ("北京",       "101010100"),
-            ("达茂旗",     "101080206"),
-            ("鄂尔多斯",   "101080701"),
-            ("呼和浩特",   "101080101"),
-            ("银川",       "101170101"),
-            ("张家口",     "101090301"),
-            ("乌兰察布",   "101080401"),
-            ("赛汗塔拉城中草原", "101080210"),
-            ("南海湿地景区",     "101080208"),
-            ("包头博物馆",       "101080209"),
-            ("希拉穆仁草原",     "101080207"),
-            ("春坤山生态旅游区", "101080205"),
-            ("白云鄂博国家矿山公园", "101080202"),
+            ("南昌",       "101240101"),
+            ("杭州",       "101210101"),
+            ("上海",       "101020100"),
+            ("东莞",       "101281601"),
+            ("深圳",       "101280601"),
+            ("中山",       "101281701"),
+            ("珠海",       "101280701"),
+            ("澳门",       "101330101"),
+            ("香港",       "101320101"),
         };
 
         // 配置文件路径
@@ -94,7 +92,7 @@ namespace WeatherUdpSender
 
             var lblInfo = new Label
             {
-                Text = $"16城市实时天气 | UDP推送 | 数据源:weather.com.cn | 固阳 东胜 达拉特旗 北京 达茂旗 鄂尔多斯 呼和浩特 银川 张家口 乌兰察布 赛汗塔拉 南海湿地 包头博物馆 希拉穆仁 春坤山 白云鄂博",
+                Text = $"14城市实时天气 | UDP推送 | 数据源:weather.com.cn | 长沙 武汉 郑州 石家庄 北京 南昌 杭州 上海 东莞 深圳 中山 珠海 澳门 香港",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
@@ -123,7 +121,7 @@ namespace WeatherUdpSender
 
             var lblFormat = new Label
             {
-                Text = "UDP格式: 城市名,温度XX°C,体感XX°C,绝对湿度XXg/m³,空气质量:XX,感冒XX,过敏XX,穿衣XX,洗车XX,紫外线XX(XX),天气,风向风力,时间,明天|天气|最高|最低|风向风力;...;第7天|天气|最高|最低|风向风力",
+                Text = "UDP格式: 城市名,温度XX°C,今日气温最高/最低,风向风力,相对湿度XX%,空气质量:XX,紫外线XX,感冒XX,过敏XX,运动XX,穿衣XX,洗车XX,天气,时间,明天|天气|最高|最低|风向风力;后天|天气|最高|最低|风向风力",
                 Left = 12, Top = y, Width = 820, Height = 32,
                 AutoSize = false,
                 ForeColor = System.Drawing.Color.FromArgb(80, 130, 80)
@@ -255,11 +253,7 @@ namespace WeatherUdpSender
                     try
                     {
                         var w = FetchCityWeather(name, code);
-                        // 绝对湿度 g/m³
-                        string absHum = w.AbsHumidity > 0 ? $"{w.AbsHumidity:F1}g/m³" : "--";
-                        string todayHL = (!string.IsNullOrEmpty(w.TodayHigh) && !string.IsNullOrEmpty(w.TodayLow))
-                            ? $"今日{w.TodayHigh}/{w.TodayLow}°C" : "";
-                        string msg = $"{w.Name},温度{w.Temp:F1}°C,体感{w.Feels:F1}°C,绝对湿度{absHum},空气质量:{w.Aqi},{todayHL},感冒{w.ColdIndex},过敏{w.AllergyIndex},穿衣{w.DressIndex},洗车{w.WashCarIndex},紫外线{w.UvIndex}({w.UvLevel}),{w.Desc},{w.WindForce},{w.Time},{w.Forecast}";
+                        string msg = $"{w.Name},温度{w.Temp:F1}°C,今日气温{w.TodayHigh}/{w.TodayLow}°C,风向风力:{w.WindForce},相对湿度:{w.Rh:F0}%,空气质量:{w.Aqi},紫外线:{w.UvIndex},感冒:{w.ColdIndex},过敏:{w.AllergyIndex},运动:{w.SportIndex},穿衣:{w.DressIndex},洗车:{w.WashCarIndex},{w.Desc},{w.Time},{w.Forecast}";
                         byte[] bytes = Encoding.GetEncoding("GBK").GetBytes(msg);
                         if (_udpClient != null)
                         {
@@ -268,7 +262,7 @@ namespace WeatherUdpSender
                         }
                         ok++;
                         string fc = string.IsNullOrEmpty(w.Forecast) ? "" : $" | 预报:{w.Forecast}";
-                        Log($"  {name}: {w.Temp:F1}°C 体感{w.Feels:F1}°C 绝对湿度{absHum} 空气质量:{w.Aqi} {todayHL} 感冒{w.ColdIndex} 过敏{w.AllergyIndex} 穿衣{w.DressIndex} 洗车{w.WashCarIndex} 紫外线{w.UvIndex}({w.UvLevel}) {w.Desc} {w.WindForce}{fc}");
+                        Log($"  {name}: {w.Temp:F1}°C 今日{w.TodayHigh}/{w.TodayLow} 风向{w.WindForce} 湿度{w.Rh:F0}% 空气质量:{w.Aqi} 紫外线:{w.UvIndex} 感冒:{w.ColdIndex} 过敏:{w.AllergyIndex} 运动:{w.SportIndex} 穿衣:{w.DressIndex} 洗车:{w.WashCarIndex} {w.Desc}{fc}");
                     }
                     catch (Exception ex)
                     {
@@ -349,11 +343,12 @@ namespace WeatherUdpSender
             // 6. 获取生活指数（国内源: weather_index）
             try
             {
-                var (uv, cold, allergy, dress, washcar) = FetchLifeIndex(code);
+                var (uv, cold, allergy, sport, dress, washcar) = FetchLifeIndex(code);
                 result.UvIndex = uv;
                 result.UvLevel = uv;
                 result.ColdIndex = cold;
                 result.AllergyIndex = allergy;
+                result.SportIndex = sport;
                 result.DressIndex = dress;
                 result.WashCarIndex = washcar;
             }
@@ -364,6 +359,7 @@ namespace WeatherUdpSender
                 result.UvLevel = "--";
                 result.ColdIndex = "--";
                 result.AllergyIndex = "--";
+                result.SportIndex = "--";
                 result.DressIndex = "--";
                 result.WashCarIndex = "--";
             }
@@ -400,8 +396,8 @@ namespace WeatherUdpSender
         };
 
         /// <summary>
-        /// 从 d1.weather.com.cn/wap_40d/ 获取未来七天预报（国内源）
-        /// 格式: 明天|天气|最高|最低|风向风力;后天|天气|最高|最低|风向风力;...;第7天|天气|最高|最低|风向风力
+        /// 从 d1.weather.com.cn/wap_40d/ 获取明天和后天的预报
+        /// 格式: 明天|天气|最高|最低|风向风力;后天|天气|最高|最低|风向风力
         /// </summary>
         private static (string forecast, string todayHigh, string todayLow) FetchForecast(string code)
         {
@@ -414,7 +410,7 @@ namespace WeatherUdpSender
 
             string todayDate = DateTime.Now.ToString("yyyyMMdd");
             var forecasts = new List<string>();
-            string[] labels = { "明天", "后天", "大后天", "第4天", "第5天", "第6天", "第7天" };
+            string[] labels = { "明天", "后天" };
             string todayHigh = "", todayLow = "";
 
             foreach (var day in root.EnumerateArray())
@@ -429,7 +425,7 @@ namespace WeatherUdpSender
                     continue;
                 }
 
-                if (forecasts.Count >= 7) break;
+                if (forecasts.Count >= 2) break;
                 if (string.Compare(date, todayDate) < 0) continue;
 
                 // 白天天气优先，如果白天天气为空则用夜间天气
@@ -460,9 +456,9 @@ namespace WeatherUdpSender
 
         /// <summary>
         /// 从 d1.weather.com.cn/weather_index/ 获取生活指数（国内源）
-        /// 返回: uv_hint, gm_hint, ag_hint, ct_hint, xc_hint
+        /// 返回: uv_hint, gm_hint, ag_hint, yd_hint, ct_hint, xc_hint
         /// </summary>
-        private static (string uv, string cold, string allergy, string dress, string washcar) FetchLifeIndex(string code)
+        private static (string uv, string cold, string allergy, string sport, string dress, string washcar) FetchLifeIndex(string code)
         {
             string url = $"http://d1.weather.com.cn/weather_index/{code}.html?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
             string js = _http.GetStringAsync(url).GetAwaiter().GetResult();
@@ -470,10 +466,11 @@ namespace WeatherUdpSender
             string uv = ExtractHint(js, "uv_hint");
             string cold = ExtractHint(js, "gm_hint");
             string allergy = ExtractHint(js, "ag_hint");
+            string sport = ExtractHint(js, "yd_hint");
             string dress = ExtractHint(js, "ct_hint");
             string washcar = ExtractHint(js, "xc_hint");
 
-            return (uv, cold, allergy, dress, washcar);
+            return (uv, cold, allergy, sport, dress, washcar);
         }
 
         private static string ExtractHint(string js, string key)
@@ -682,6 +679,7 @@ namespace WeatherUdpSender
         public string TodayLow = "";   // 今天最低
         public string ColdIndex = "";   // 感冒指数
         public string AllergyIndex = ""; // 过敏指数
+        public string SportIndex = "";   // 运动指数
         public string DressIndex = "";   // 穿衣指数
         public string WashCarIndex = ""; // 洗车指数
     }
