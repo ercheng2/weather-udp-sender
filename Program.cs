@@ -93,7 +93,7 @@ namespace WeatherUdpSender
 
             var lblInfo = new Label
             {
-                Text = $"14城市实时天气 | UDP推送 | 数据源:weather.com.cn | 长沙 武汉 郑州 石家庄 北京 南昌 杭州 上海 东莞 深圳 中山 珠海 澳门 香港",
+                Text = $"17城市实时天气 | UDP推送 | 数据源:weather.com.cn | 长沙 广州 武汉 郑州 石家庄 北京 南昌 杭州 上海 东莞 深圳 中山 珠海 澳门 香港",
                 Left = 12, Top = y, Width = 820, Height = 18,
                 ForeColor = System.Drawing.Color.FromArgb(100, 100, 100)
             };
