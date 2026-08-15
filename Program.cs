@@ -14,10 +14,11 @@ namespace WeatherUdpSender
 {
     public class MainForm : Form
     {
-        // 16个城市：名称、weather.com.cn城市代码
+        // 17个城市：名称、weather.com.cn城市代码
         private static readonly (string Name, string Code)[] Cities = new[]
         {
             ("长沙",       "101250101"),
+            ("广州",       "101280101"),
             ("武汉",       "101200101"),
             ("郑州",       "101180101"),
             ("石家庄",     "101090101"),
