@@ -64,7 +64,13 @@ namespace WeatherUdpSender
         private static readonly HttpClient _http = new()
         {
             Timeout = TimeSpan.FromSeconds(15),
-            DefaultRequestHeaders = { { "Referer", "http://www.weather.com.cn/" } }
+            DefaultRequestHeaders =
+            {
+                { "Referer", "http://www.weather.com.cn/" },
+                { "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" },
+                { "Accept", "*/*" },
+                { "Accept-Language", "zh-CN,zh;q=0.9" }
+            }
         };
 
         public MainForm()
