@@ -50,7 +50,16 @@ namespace WeatherUdpSender
         private string _uvLevel = "";
         private string _uvIndex = "";
 
-        private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+        private static readonly HttpClient _http = new()
+        {
+            Timeout = TimeSpan.FromSeconds(15),
+            DefaultRequestHeaders =
+            {
+                { "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" },
+                { "Referer", "http://www.tqyb.com.cn/" },
+                { "Accept", "*/*" }
+            }
+        };
 
         public MainForm()
         {
